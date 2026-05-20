@@ -4,6 +4,10 @@
 # All secrets are injected via environment variables (Render → Environment).
 ##############################################################################
 
+# Render (and similar hosts) set PORT; default 8080 for local Docker runs
+server:
+  port: ${PORT:8080}
+
 spring:
   servlet:
     multipart:

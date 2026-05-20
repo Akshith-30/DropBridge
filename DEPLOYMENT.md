@@ -28,18 +28,19 @@ This document expands **“Next — Deploy (Milestone B)”** from [README.md](R
 ## 1. Database — Supabase PostgreSQL
 
 1. Create a [Supabase](https://supabase.com) project.
-2. In **Project settings → Database**, copy the **URI** for a direct connection (port **5432**, not the pooler `6543` if you use Hibernate/JPA).
-3. Build a JDBC URL Render can use, for example:
-   - `jdbc:postgresql://db.<ref>.supabase.co:5432/postgres?sslmode=require`
-4. Note **database password** (from project creation or reset).
+2. **Connect** → **Session pooler** → port **5432** (not the direct `db.*.supabase.co` host — Render often gets `Network unreachable` on direct IPv6).
+3. Copy the **pooler host** (e.g. `aws-0-us-east-1.pooler.supabase.com`).
+4. Note your **project ref** (from `db.YOUR_REF.supabase.co` in settings).
 
-**Render env vars (later):**
+**Render env vars:**
 
 | Key | Value |
 |-----|--------|
-| `DATABASE_URL` | Full JDBC URL above |
-| `DB_USERNAME` | Usually `postgres` |
-| `DB_PASSWORD` | Your Supabase DB password |
+| `DATABASE_URL` | `jdbc:postgresql://YOUR_POOLER_HOST:5432/postgres?sslmode=require` (no password in URL) |
+| `DB_USERNAME` | `postgres.YOUR_PROJECT_REF` |
+| `DB_PASSWORD` | Supabase DB password only |
+
+If connection still fails: **Database** → **Network restrictions** → allow `0.0.0.0/0` for testing or disable restrictions.
 
 ---
 
@@ -148,6 +149,10 @@ Already in repo (post-MVP): multi-file sessions (1 GB per session), transfer his
 | Symptom | Check |
 |---------|--------|
 | Render build fails | Java 21 on Render; `mvn` logs; run `mvn -B package -DskipTests` locally |
+| `Driver claims to not accept jdbcUrl` | `DATABASE_URL` must be `jdbc:postgresql://...` with **no** user/password in the URL; set password only in `DB_PASSWORD` |
+| `Network unreachable` (Postgres) | Use Supabase **Session pooler** host (not `db.*.supabase.co`); `DB_USERNAME=postgres.YOUR_REF`; check Supabase network restrictions |
+| Health check timeout on `:10000` | App must listen on Render’s `PORT` — production profile sets `server.port: ${PORT:8080}`; redeploy latest `main` |
+| `no tenant identifier provided` | `DB_USERNAME` must be `postgres.YOUR_PROJECT_REF`, not `postgres` |
 | App starts then 503 / unhealthy | `GET /actuator/health` on service URL; DB reachable from Render (Supabase firewall / IP if any) |
 | CORS errors in browser | `FRONTEND_URL` matches Vercel origin exactly |
 | WebSocket fails | `VITE_WS_URL` uses `wss://` and same host as API |

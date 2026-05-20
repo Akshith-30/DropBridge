@@ -27,7 +27,7 @@ services:
       - key: DATABASE_URL
         sync: false   # set in Render dashboard: jdbc:postgresql://<host>:5432/postgres?sslmode=require
       - key: DB_USERNAME
-        value: postgres
+        sync: false   # Supabase Session pooler: postgres.YOUR_PROJECT_REF
       - key: DB_PASSWORD
         sync: false
 
