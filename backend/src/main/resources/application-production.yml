@@ -9,6 +9,10 @@ server:
   port: ${PORT:8080}
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.mail.MailSenderAutoConfiguration
+
   servlet:
     multipart:
       max-file-size: 1GB
@@ -27,26 +31,12 @@ spring:
       idle-timeout: 300000
 
   mail:
-    # -----------------------------------------------------------------------
-    # Email delivery — Resend (recommended) or SendGrid
-    #
-    # Resend setup (https://resend.com/docs/send-with-smtp):
-    #   MAIL_HOST=smtp.resend.com  MAIL_PORT=465  MAIL_USERNAME=resend
-    #   MAIL_PASSWORD=re_xxxxxxxxxxxx  (your Resend API key)
-    #   MAIL_FROM=noreply@yourdomain.com
-    #
-    # SendGrid (https://docs.sendgrid.com/for-developers/sending-email/smtp-provider):
-    #   MAIL_HOST=smtp.sendgrid.net  MAIL_PORT=587  MAIL_USERNAME=apikey
-    #   MAIL_PASSWORD=SG.xxxxxxxxxxxx  (your SendGrid API key)
-    # -----------------------------------------------------------------------
+    # Optional — leave MAIL_HOST unset (or delete MAIL_* on Render) to skip SMTP.
+    # Placeholders like "none" are ignored. Resend: MAIL_HOST=smtp.resend.com, etc.
     host: ${MAIL_HOST:}
     port: ${MAIL_PORT:465}
     username: ${MAIL_USERNAME:}
     password: ${MAIL_PASSWORD:}
-    properties:
-      mail.smtp.auth: true
-      mail.smtp.ssl.enable: true
-      mail.smtp.starttls.enable: false
 
 
   jpa:

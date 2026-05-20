@@ -53,14 +53,6 @@ services:
       - key: FRONTEND_URL
         sync: false   # e.g. https://dropbridge.vercel.app (set before or right after Vercel deploy)
 
-      # ── Email (Resend or SendGrid) ───────────────────────────────────────
-      - key: MAIL_HOST
-        sync: false   # smtp.resend.com  or  smtp.sendgrid.net
-      - key: MAIL_PORT
-        value: "465"
-      - key: MAIL_USERNAME
-        sync: false   # resend  or  apikey
-      - key: MAIL_PASSWORD
-        sync: false   # your API key
-      - key: MAIL_FROM
-        sync: false   # noreply@yourdomain.com
+      # ── Email (optional — omit all MAIL_* vars to disable SMTP) ───────────
+      # - key: MAIL_HOST
+      #   sync: false   # smtp.resend.com when enabling Resend later
