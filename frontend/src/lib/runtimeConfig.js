@@ -54,12 +54,21 @@ export function buildPresenceWsUrl(deviceId, displayName) {
   return `${protocol}//${window.location.host}/ws/presence?${q}`;
 }
 
-export function getNetworkErrorHint() {
+export function getNetworkErrorHint(err) {
   const api = getApiBaseOrigin() || PRODUCTION_API_BASE;
+  if (err?.code === 'ECONNABORTED') {
+    return `Request to ${api} timed out. Render free tier may be waking up — wait ~30s and try again.`;
+  }
   if (useLocalBackend()) {
     return `Cannot reach the local API. Start the backend: cd backend && mvn spring-boot:run (${api} not used).`;
   }
-  return `Cannot reach the API at ${api}. Check Render is live, FRONTEND_URL/CORS on the backend, and redeploy Vercel after env changes.`;
+  return `Cannot reach the API at ${api}. Redeploy the Render backend after CORS fixes, then hard-refresh this page.`;
+}
+
+export function formatApiError(err, fallback = 'Something went wrong.') {
+  if (err?.response?.data?.message) return err.response.data.message;
+  if (!err?.response) return getNetworkErrorHint(err);
+  return fallback;
 }
 
 /** Call once in dev to confirm which backend is targeted */

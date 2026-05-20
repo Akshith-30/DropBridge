@@ -154,7 +154,8 @@ Already in repo (post-MVP): multi-file sessions (1 GB per session), transfer his
 | Health check timeout on `:10000` | App must listen on Render’s `PORT` — production profile sets `server.port: ${PORT:8080}`; redeploy latest `main` |
 | `no tenant identifier provided` | `DB_USERNAME` must be `postgres.YOUR_PROJECT_REF`, not `postgres` |
 | App starts then 503 / unhealthy | `GET /actuator/health` on service URL; DB reachable from Render (Supabase firewall / IP if any) |
-| CORS errors in browser | `FRONTEND_URL` matches Vercel origin exactly |
+| CORS errors in browser | `FRONTEND_URL` matches Vercel origin exactly; redeploy backend after CORS Security fix |
+| “Cannot reach API” from Vercel but health works | Spring Security was returning **403 on OPTIONS** — deploy latest `main` with `CorsConfig` + `http.cors()` |
 | WebSocket fails | `VITE_WS_URL` uses `wss://` and same host as API |
 | P2P only on LAN | `VITE_TURN_*` missing or wrong on Vercel |
 

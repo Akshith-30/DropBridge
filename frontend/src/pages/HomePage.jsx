@@ -13,7 +13,7 @@ import {
   formatFileSize,
   totalBytes,
 } from '../lib/uploadLimits';
-import { getNetworkErrorHint } from '../lib/runtimeConfig';
+import { formatApiError } from '../lib/runtimeConfig';
 import { createSession, joinSessionByCode } from '../services/api';
 import { getDeviceId, getDisplayName } from '../utils/deviceIdentity';
 import { reconnectPresence } from '../webrtc/presenceClient';
@@ -87,12 +87,7 @@ export default function HomePage() {
       navigate(`/status/${sessionRes.data.sessionId}`);
     } catch (err) {
       console.error('Failed to create session:', err);
-      const apiMessage = err.response?.data?.message;
-      const isNetworkError = !err.response && err.message;
-      setError(
-        apiMessage ||
-          (isNetworkError ? getNetworkErrorHint() : 'Could not start transfer. Please try again.')
-      );
+      setError(formatApiError(err, 'Could not start transfer. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
