@@ -1,0 +1,66 @@
+##############################################################################
+# Render.com service definition for DropBridge backend
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Usage:
+#   1. Push this file to your repo root.
+#   2. In Render dashboard → New → Blueprint → select your repo.
+#   3. Render reads this file and creates the service automatically.
+#   4. Set the required environment variables in the Render dashboard
+#      (marked as sync: false below so they're never stored in this file).
+##############################################################################
+
+services:
+  - type: web
+    name: dropbridge-api
+    runtime: java
+    plan: free                      # upgrade to Starter ($7/mo) to avoid cold starts
+    region: oregon                  # pick closest to your users
+
+    buildCommand: cd backend && mvn -B package -DskipTests -q
+    startCommand: java -jar backend/target/dropbridge-0.0.1-SNAPSHOT.jar --spring.profiles.active=production
+
+    healthCheckPath: /actuator/health   # add spring-boot-starter-actuator if you want this
+
+    envVars:
+      # ── Database (Supabase) ─────────────────────────────────────────────
+      - key: DATABASE_URL
+        sync: false   # set in Render dashboard: jdbc:postgresql://<host>:5432/postgres?sslmode=require
+      - key: DB_USERNAME
+        value: postgres
+      - key: DB_PASSWORD
+        sync: false
+
+      # ── JWT ─────────────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        sync: false   # openssl rand -base64 48
+
+      # ── Cloudflare R2 ───────────────────────────────────────────────────
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+
+      # ── Database schema (first deploy only) ─────────────────────────────
+      - key: SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: update   # after first successful boot, change to validate in Render dashboard
+
+      # ── CORS / Frontend ─────────────────────────────────────────────────
+      - key: FRONTEND_URL
+        sync: false   # e.g. https://dropbridge.vercel.app (set before or right after Vercel deploy)
+
+      # ── Email (Resend or SendGrid) ───────────────────────────────────────
+      - key: MAIL_HOST
+        sync: false   # smtp.resend.com  or  smtp.sendgrid.net
+      - key: MAIL_PORT
+        value: "465"
+      - key: MAIL_USERNAME
+        sync: false   # resend  or  apikey
+      - key: MAIL_PASSWORD
+        sync: false   # your API key
+      - key: MAIL_FROM
+        sync: false   # noreply@yourdomain.com

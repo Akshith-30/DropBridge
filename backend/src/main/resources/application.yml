@@ -1,0 +1,54 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: DropBridge
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/dropbridge
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  servlet:
+    multipart:
+      # Largest single upload in one request (one file can be up to the session cap)
+      max-file-size: 1GB
+      max-request-size: 1GB
+
+  scheduling:
+    enabled: true
+
+# Application-specific configuration
+dropbridge:
+  storage:
+    local-path: ./uploads
+  frontend:
+    # Default dev URL; browser sends X-Frontend-Origin (e.g. :5174) when Vite picks another port
+    url: http://localhost:5173
+  session:
+    expiration-hours: 24
+  jwt:
+    # Override in production: export JWT_SECRET=$(openssl rand -base64 48)
+    secret: ${JWT_SECRET:dropbridge-dev-secret-change-me-in-production-32chars-min}
+    expiration-hours: 168
+  transfer:
+    # Sliding window per client IP for POST /api/transfers (abuse protection)
+    create-rate-per-minute: 40
+    history-page-size: 50
+  upload:
+    # When true, cloud uploads reject Content-Types outside a safe prefix list (see FileService)
+    strict-mime-validation: false
+    max-files-per-session: 50
+    # Combined size of all files in one transfer session (not per-file)
+    max-session-size: 1GB

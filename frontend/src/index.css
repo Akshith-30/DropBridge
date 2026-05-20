@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+/* Design tokens — use as bg-accent-blue, text-accent-green, etc. */
+@theme {
+  --color-bg-primary: #000000;
+  --color-bg-secondary: #0a0a0f;
+  --color-bg-tertiary: #111118;
+  --color-accent-blue: #3b82f6;
+  --color-accent-purple: #a855f7;
+  --color-accent-gold: #eab308;
+  --color-accent-green: #22c55e;
+  --color-accent-pink: #ec4899;
+  --color-accent-cyan: #06b6d4;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  --animate-fade-in-up: fade-in-up 0.6s ease-out forwards;
+  --animate-fade-in-up-delayed: fade-in-up 0.6s ease-out 0.2s forwards;
+  --animate-content-enter: content-enter 0.35s var(--ease-smooth) forwards;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-ray-sweep: ray-sweep 8s ease-in-out infinite;
+  --animate-ray-sweep-2: ray-sweep 10s ease-in-out 2s infinite;
+  --animate-ray-sweep-3: ray-sweep 12s ease-in-out 4s infinite;
+  --animate-glow-pulse: glow-pulse 6s ease-in-out infinite;
+  --animate-twinkle: twinkle 3s ease-in-out infinite;
+  --animate-overlay-in: overlay-fade-in 0.35s var(--ease-smooth) forwards;
+  --animate-panel-in: panel-slide-in 0.45s var(--ease-smooth) forwards;
+  --animate-shimmer: shimmer 2s linear infinite;
+}
+
+@layer base {
+  * {
+    @apply box-border m-0 p-0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply min-h-screen overflow-x-hidden bg-bg-primary font-sans text-white antialiased;
+  }
+
+  #root {
+    @apply flex min-h-screen flex-col;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-sm bg-white/10;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-white/20;
+  }
+}
+
+/* Keyframes for cosmic background & motion (hard to express purely in utilities) */
+@keyframes ray-sweep {
+  0%,
+  100% {
+    transform: translateX(-10%) rotate(-3deg);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translateX(10%) rotate(-3deg);
+    opacity: 0.35;
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes panel-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@utility animate-fade-in-up-delayed {
+  animation: fade-in-up 0.6s ease-out 0.2s forwards;
+  opacity: 0;
+}
+
+@utility animated-height {
+  overflow: hidden;
+  transition: height 0.45s var(--ease-smooth);
+}
+
+@utility animated-height-inner {
+  overflow: hidden;
+}
+
+@utility perspective-grid {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 40%;
+  background:
+    linear-gradient(rgba(34, 197, 94, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 197, 94, 0.05) 1px, transparent 1px);
+  background-size: 80px 80px;
+  transform: perspective(500px) rotateX(60deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

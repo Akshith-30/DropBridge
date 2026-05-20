@@ -1,0 +1,110 @@
+##############################################################################
+# DropBridge — production profile overrides
+# Activated by: --spring.profiles.active=production
+# All secrets are injected via environment variables (Render → Environment).
+##############################################################################
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 1GB
+      max-request-size: 1GB
+
+  datasource:
+    # Supabase connection string (session mode, port 5432 NOT 6543 for JPA).
+    # Render env var: DATABASE_URL=jdbc:postgresql://<host>:5432/postgres?user=postgres&password=<pass>&sslmode=require
+    url: ${DATABASE_URL}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5          # keep within Supabase free connection limits
+      connection-timeout: 20000
+      idle-timeout: 300000
+
+  mail:
+    # -----------------------------------------------------------------------
+    # Email delivery — Resend (recommended) or SendGrid
+    #
+    # Resend setup (https://resend.com/docs/send-with-smtp):
+    #   MAIL_HOST=smtp.resend.com  MAIL_PORT=465  MAIL_USERNAME=resend
+    #   MAIL_PASSWORD=re_xxxxxxxxxxxx  (your Resend API key)
+    #   MAIL_FROM=noreply@yourdomain.com
+    #
+    # SendGrid (https://docs.sendgrid.com/for-developers/sending-email/smtp-provider):
+    #   MAIL_HOST=smtp.sendgrid.net  MAIL_PORT=587  MAIL_USERNAME=apikey
+    #   MAIL_PASSWORD=SG.xxxxxxxxxxxx  (your SendGrid API key)
+    # -----------------------------------------------------------------------
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.ssl.enable: true
+      mail.smtp.starttls.enable: false
+
+
+  jpa:
+    hibernate:
+      # First deploy on Render: set SPRING_JPA_HIBERNATE_DDL_AUTO=update (see render.yaml).
+      # After tables exist, set to validate and redeploy.
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
+    show-sql: false                 # never log SQL in prod
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+
+# Storage: R2 (Cloudflare) — set these vars on Render
+dropbridge:
+  storage:
+    type: r2
+    r2:
+      account-id: ${R2_ACCOUNT_ID}
+      access-key-id: ${R2_ACCESS_KEY_ID}
+      secret-access-key: ${R2_SECRET_ACCESS_KEY}
+      bucket: ${R2_BUCKET}
+
+  frontend:
+    # Set FRONTEND_URL on Render to your Vercel deployment URL, e.g.:
+    #   https://dropbridge.vercel.app
+    url: ${FRONTEND_URL}
+
+  session:
+    expiration-hours: 24
+
+  jwt:
+    # Generate with: openssl rand -base64 48
+    secret: ${JWT_SECRET}
+    expiration-hours: 168
+
+  mail:
+    # Verified sender address for outbound emails.
+    # Must match a domain you've verified in Resend/SendGrid.
+    # Render env var: MAIL_FROM=noreply@yourdomain.com
+    from: ${MAIL_FROM:}
+
+  upload:
+    # Set to true in a dedicated config snippet if you want MIME allowlist on cloud uploads
+    strict-mime-validation: false
+    max-session-size: 1GB
+
+# Actuator — Render health checks (see render.yaml healthCheckPath)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+
+# Logging — quieter in production
+logging:
+  level:
+    root: WARN
+    com.dropbridge: INFO
+    org.springframework.web.servlet.DispatcherServlet: ERROR

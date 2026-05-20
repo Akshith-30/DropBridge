@@ -1,0 +1,35 @@
+# In-memory DB for tests — no local PostgreSQL required (mvn verify).
+spring:
+  datasource:
+    url: jdbc:h2:mem:dropbridge_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  mail:
+    host: localhost
+    port: 3025
+    username: ""
+    password: ""
+
+dropbridge:
+  storage:
+    type: local
+    local-path: ${java.io.tmpdir}/dropbridge-test-uploads
+  frontend:
+    url: http://localhost:5173
+  session:
+    expiration-hours: 24
+  jwt:
+    secret: test-jwt-secret-at-least-32-characters-long!!
+    expiration-hours: 168
+  upload:
+    strict-mime-validation: false
+    max-session-size: 1GB
