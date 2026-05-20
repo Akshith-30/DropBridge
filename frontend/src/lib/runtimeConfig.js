@@ -1,12 +1,6 @@
 /**
- * API / WebSocket base URLs.
- *
- * - Local dev (npm run dev): uses Vite proxy → localhost:8080 when env vars unset.
- * - Production (Vercel): uses VITE_* at build time, or defaults below.
- *
- * Override anytime via Vercel env: VITE_API_BASE_URL, VITE_WS_URL
+ * Deployed DropBridge URLs (also set in frontend/.env and .env.production).
  */
-
 export const PRODUCTION_API_BASE = 'https://dropbridge-api.onrender.com';
 export const PRODUCTION_WS_BASE = 'wss://dropbridge-api.onrender.com';
 export const PRODUCTION_FRONTEND_ORIGIN = 'https://drop-bridge-theta.vercel.app';
@@ -15,11 +9,15 @@ function trimSlash(url) {
   return url ? url.replace(/\/$/, '') : '';
 }
 
-/** Backend origin without /api (e.g. https://dropbridge-api.onrender.com) */
+function useLocalBackend() {
+  return import.meta.env.VITE_USE_LOCAL_BACKEND === 'true';
+}
+
+/** Backend origin without /api */
 export function getApiBaseOrigin() {
   const fromEnv = trimSlash(import.meta.env.VITE_API_BASE_URL);
   if (fromEnv) return fromEnv;
-  if (import.meta.env.DEV) return '';
+  if (useLocalBackend()) return '';
   return PRODUCTION_API_BASE;
 }
 
@@ -33,7 +31,7 @@ export function getApiBaseUrl() {
 export function getWsBaseOrigin() {
   const fromEnv = trimSlash(import.meta.env.VITE_WS_URL);
   if (fromEnv) return fromEnv;
-  if (import.meta.env.DEV) return '';
+  if (useLocalBackend()) return '';
   return PRODUCTION_WS_BASE;
 }
 
@@ -57,9 +55,16 @@ export function buildPresenceWsUrl(deviceId, displayName) {
 }
 
 export function getNetworkErrorHint() {
-  if (import.meta.env.DEV) {
-    return 'Cannot reach the server. Start the backend on port 8080 (mvn spring-boot:run).';
-  }
   const api = getApiBaseOrigin() || PRODUCTION_API_BASE;
-  return `Cannot reach the API at ${api}. If you changed backends, set VITE_API_BASE_URL on Vercel and redeploy.`;
+  if (useLocalBackend()) {
+    return `Cannot reach the local API. Start the backend: cd backend && mvn spring-boot:run (${api} not used).`;
+  }
+  return `Cannot reach the API at ${api}. Check Render is live, FRONTEND_URL/CORS on the backend, and redeploy Vercel after env changes.`;
+}
+
+/** Call once in dev to confirm which backend is targeted */
+export function logRuntimeTargets() {
+  if (!import.meta.env.DEV) return;
+  console.info('[DropBridge] API →', getApiBaseUrl());
+  console.info('[DropBridge] WS  →', getWsBaseOrigin() || '(via Vite proxy)');
 }

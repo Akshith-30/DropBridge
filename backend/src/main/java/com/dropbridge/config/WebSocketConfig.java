@@ -22,21 +22,18 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        String[] origins = {
+                frontendUrl,
+                DropBridgeCorsProperties.PRODUCTION_FRONTEND_URL,
+                DropBridgeCorsProperties.VERCEL_PREVIEW_PATTERN,
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "https://localhost:*",
+                "https://127.0.0.1:*",
+        };
         registry.addHandler(signalingWebSocketHandler, "/ws/signaling")
-                .setAllowedOriginPatterns(
-                        frontendUrl,
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        "https://localhost:*",
-                        "https://127.0.0.1:*"
-                );
+                .setAllowedOriginPatterns(origins);
         registry.addHandler(presenceWebSocketHandler, "/ws/presence")
-                .setAllowedOriginPatterns(
-                        frontendUrl,
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        "https://localhost:*",
-                        "https://127.0.0.1:*"
-                );
+                .setAllowedOriginPatterns(origins);
     }
 }

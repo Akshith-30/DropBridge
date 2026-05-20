@@ -16,6 +16,8 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addMapping("/api/**")
                 .allowedOriginPatterns(
                         frontendUrl,
+                        DropBridgeCorsProperties.PRODUCTION_FRONTEND_URL,
+                        DropBridgeCorsProperties.VERCEL_PREVIEW_PATTERN,
                         "http://localhost:*",
                         "http://127.0.0.1:*",
                         "https://localhost:*",

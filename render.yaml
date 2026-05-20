@@ -51,7 +51,7 @@ services:
 
       # ── CORS / Frontend ─────────────────────────────────────────────────
       - key: FRONTEND_URL
-        sync: false   # e.g. https://dropbridge.vercel.app (set before or right after Vercel deploy)
+        value: https://drop-bridge-theta.vercel.app
 
       # ── Email (optional — omit all MAIL_* vars to disable SMTP) ───────────
       # - key: MAIL_HOST

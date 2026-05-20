@@ -61,9 +61,8 @@ dropbridge:
       bucket: ${R2_BUCKET}
 
   frontend:
-    # Set FRONTEND_URL on Render to your Vercel deployment URL, e.g.:
-    #   https://dropbridge.vercel.app
-    url: ${FRONTEND_URL}
+    # Render env FRONTEND_URL overrides; default matches production Vercel deploy
+    url: ${FRONTEND_URL:https://drop-bridge-theta.vercel.app}
 
   session:
     expiration-hours: 24
