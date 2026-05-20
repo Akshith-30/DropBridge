@@ -1,15 +1,8 @@
 import axios from 'axios';
 import { getAccessToken } from '../store/authStore';
+import { getApiBaseUrl } from '../lib/runtimeConfig';
 
-/**
- * In development, Vite proxies /api to localhost:8080 so we use a relative path.
- * In production (Vercel → Render), the frontend and backend are on different origins,
- * so VITE_API_BASE_URL must be set to the full Render URL, e.g.:
- *   https://dropbridge-api.onrender.com
- */
-const BASE_URL = import.meta.env.VITE_API_BASE_URL
-  ? `${import.meta.env.VITE_API_BASE_URL}/api`
-  : '/api';
+const BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: BASE_URL,

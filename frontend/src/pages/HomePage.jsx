@@ -13,6 +13,7 @@ import {
   formatFileSize,
   totalBytes,
 } from '../lib/uploadLimits';
+import { getNetworkErrorHint } from '../lib/runtimeConfig';
 import { createSession, joinSessionByCode } from '../services/api';
 import { getDeviceId, getDisplayName } from '../utils/deviceIdentity';
 import { reconnectPresence } from '../webrtc/presenceClient';
@@ -90,9 +91,7 @@ export default function HomePage() {
       const isNetworkError = !err.response && err.message;
       setError(
         apiMessage ||
-          (isNetworkError
-            ? 'Cannot reach the server. Start the backend on port 8080.'
-            : 'Could not start transfer. Please try again.')
+          (isNetworkError ? getNetworkErrorHint() : 'Could not start transfer. Please try again.')
       );
     } finally {
       setIsSubmitting(false);

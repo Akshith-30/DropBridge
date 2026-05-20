@@ -1,4 +1,5 @@
 import { getDeviceId, getDisplayName } from '../utils/deviceIdentity';
+import { buildPresenceWsUrl } from '../lib/runtimeConfig';
 
 const PRESENCE_TYPES = {
   REGISTERED: 'REGISTERED',
@@ -72,10 +73,7 @@ function applyPresenceSync(peers) {
 }
 
 function getPresenceUrl() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const deviceId = encodeURIComponent(getDeviceId());
-  const name = encodeURIComponent(getDisplayName() || 'My device');
-  return `${protocol}//${window.location.host}/ws/presence?deviceId=${deviceId}&displayName=${name}`;
+  return buildPresenceWsUrl(getDeviceId(), getDisplayName() || 'My device');
 }
 
 function notifyListeners(message) {

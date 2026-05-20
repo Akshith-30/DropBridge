@@ -1,21 +1,5 @@
 import { SIGNALING_MESSAGE_TYPES } from './constants';
-
-/**
- * Build the WebSocket signaling URL.
- *
- * Dev:        uses window.location.host (Vite proxies WS to :8080)
- * Production: uses VITE_WS_URL env var, e.g. wss://dropbridge-api.onrender.com
- */
-function getSignalingUrl(sessionId, role) {
-  if (import.meta.env.VITE_WS_URL) {
-    const base = import.meta.env.VITE_WS_URL.replace(/\/$/, '');
-    return `${base}/ws/signaling?sessionId=${sessionId}&role=${role}`;
-  }
-  // Dev fallback: derive from current page origin
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
-  return `${protocol}//${host}/ws/signaling?sessionId=${sessionId}&role=${role}`;
-}
+import { buildSignalingWsUrl } from '../lib/runtimeConfig';
 
 export class SignalingClient {
   constructor({ sessionId, role, onMessage, onOpen, onClose, onError }) {
@@ -30,7 +14,7 @@ export class SignalingClient {
 
   connect() {
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(getSignalingUrl(this.sessionId, this.role));
+      this.ws = new WebSocket(buildSignalingWsUrl(this.sessionId, this.role));
 
       this.ws.onopen = () => {
         this.send({ type: SIGNALING_MESSAGE_TYPES.JOIN, sessionId: this.sessionId, role: this.role });
