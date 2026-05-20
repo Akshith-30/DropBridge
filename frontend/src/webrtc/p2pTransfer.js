@@ -142,24 +142,40 @@ export function runSenderTransfer({ sessionId, file, files, onProgress, onStatus
           }
           onStatus?.('transferring');
           try {
-            const waitForAck = () =>
-              new Promise((res) => {
-                ackResolver = res;
+            const waitForAck = (timeoutMs = 90_000) =>
+              new Promise((res, rej) => {
+                const timer = setTimeout(() => {
+                  ackResolver = null;
+                  rej(new Error('Receiver did not confirm delivery in time'));
+                }, timeoutMs);
+                ackResolver = () => {
+                  clearTimeout(timer);
+                  ackResolver = null;
+                  res();
+                };
               });
 
             for (let i = 0; i < fileList.length; i++) {
               const current = fileList[i];
               const fileProgress = (pct) => {
                 const base = (i / fileList.length) * 100;
-                onProgress?.(Math.min(100, Math.round(base + pct / fileList.length)));
+                onProgress?.(Math.min(99, Math.round(base + pct / fileList.length)));
               };
               await sendFileOverChannel(dataChannel, current, fileProgress, i, fileList.length);
               if (i < fileList.length - 1) {
                 await waitForAck();
               } else {
                 onStatus?.('awaiting_ack');
+                onProgress?.(99);
+                await waitForAck();
               }
             }
+
+            transferDone = true;
+            onProgress?.(100);
+            onStatus?.('completed');
+            cleanupMedia();
+            resolve();
           } catch (err) {
             fail(err);
           }
@@ -215,14 +231,7 @@ export function runSenderTransfer({ sessionId, file, files, onProgress, onStatus
             await addIceCandidateSafe(pc, msg.candidate, iceQueue);
           } else if (isType(msg, SIGNALING_MESSAGE_TYPES.RECEIVER_ACK)) {
             if (ackResolver) {
-              const next = ackResolver;
-              ackResolver = null;
-              next();
-            } else if (!transferDone) {
-              transferDone = true;
-              onStatus?.('completed');
-              cleanupMedia();
-              resolve();
+              ackResolver();
             }
           } else if (isType(msg, SIGNALING_MESSAGE_TYPES.ERROR)) {
             fail(new Error(msg.message || 'Signaling error'));

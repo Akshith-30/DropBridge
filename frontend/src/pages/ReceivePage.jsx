@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { AlertCircle, Loader2, CheckCircle2, Radio, Cloud } from 'lucide-react';
+import { AlertCircle, Loader2, CheckCircle2, Radio, Cloud, Download } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
 import TransferStatusBadge from '../components/TransferStatus';
 import TransferProgress from '../components/TransferProgress';
-import FileDownloadRow from '../components/FileDownloadRow';
-import { getSession, getFilesBySession, getFileDownloadUrl, joinSessionById } from '../services/api';
+import FileListItem from '../components/FileListItem';
+import Button from '../components/ui/Button';
+import { downloadAllCloudFiles, downloadAllP2pFiles } from '../lib/downloadFiles';
+import { getSession, getFilesBySession, joinSessionById } from '../services/api';
 import { runReceiverTransfer } from '../webrtc/p2pTransfer';
 import { upsertKnownContact } from '../utils/knownContacts';
+import { shouldPollReceiverSession } from '../lib/sessionPolling';
 
 const P2P_STATUS_LABELS = {
   waiting: 'Connecting to the sender…',
@@ -27,34 +30,71 @@ export default function ReceivePage() {
   const [p2pProgress, setP2pProgress] = useState(0);
   const [p2pFiles, setP2pFiles] = useState([]);
   const [p2pError, setP2pError] = useState(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
+  const [downloadAllDone, setDownloadAllDone] = useState(false);
   const p2pStarted = useRef(false);
 
   const isCloudMode = session?.mode === 'CLOUD';
 
   useEffect(() => {
+    let cancelled = false;
+    let intervalId = null;
+    let p2pActive = false;
+
+    const pollOnce = async (joinedMode) => {
+      const [sessionRes, filesRes] = await Promise.all([
+        getSession(sessionId),
+        getFilesBySession(sessionId),
+      ]);
+      if (cancelled) return { session: null, files: [] };
+
+      setSession(sessionRes.data);
+      if (filesRes.data.length > 0) {
+        setFiles(filesRes.data);
+      }
+
+      const keepPolling = shouldPollReceiverSession({
+        session: sessionRes.data,
+        isCloudMode: joinedMode === 'CLOUD',
+        p2pActive,
+        p2pStatus,
+        hasFiles: filesRes.data.length > 0,
+      });
+      if (!keepPolling && intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+      return { session: sessionRes.data, files: filesRes.data };
+    };
+
     const load = async () => {
       try {
         const joinRes = await joinSessionById(sessionId);
         const joinedSession = joinRes.data;
 
-        const [sessionRes, filesRes] = await Promise.all([
-          getSession(sessionId),
-          getFilesBySession(sessionId),
-        ]);
-        setSession(sessionRes.data);
-        if (filesRes.data.length > 0) {
-          setFiles(filesRes.data);
-        }
+        const { files } = await pollOnce(joinedSession.mode);
 
         const useP2p =
-          joinedSession.mode === 'P2P' && filesRes.data.length === 0 && !p2pStarted.current;
+          joinedSession.mode === 'P2P' && files.length === 0 && !p2pStarted.current;
 
         if (useP2p) {
+          p2pActive = true;
           p2pStarted.current = true;
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+
           runReceiverTransfer({
             sessionId,
             onProgress: setP2pProgress,
-            onStatus: setP2pStatus,
+            onStatus: (status) => {
+              setP2pStatus(status);
+              if (status === 'completed' && intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+              }
+            },
             onFileReceived: (file) => {
               setP2pFiles((prev) => {
                 const dup = prev.some(
@@ -82,34 +122,22 @@ export default function ReceivePage() {
             console.error('P2P receive failed:', err);
             setP2pError(err.message || 'P2P receive failed');
           });
+        } else if (joinedSession.mode === 'CLOUD') {
+          intervalId = setInterval(() => pollOnce('CLOUD'), 5000);
         }
       } catch (err) {
         console.error('Failed to load session:', err);
         setError(err.response?.data?.message || 'Session not found or expired');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     load();
 
-    const interval = setInterval(async () => {
-      try {
-        const [sessionRes, filesRes] = await Promise.all([
-          getSession(sessionId),
-          getFilesBySession(sessionId),
-        ]);
-        setSession(sessionRes.data);
-        if (filesRes.data.length > 0) {
-          setFiles(filesRes.data);
-        }
-      } catch {
-        /* ignore */
-      }
-    }, 3000);
-
     return () => {
-      clearInterval(interval);
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
       p2pStarted.current = false;
     };
   }, [sessionId]);
@@ -122,14 +150,21 @@ export default function ReceivePage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const downloadP2pFile = (file) => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file.name;
-    a.click();
-    URL.revokeObjectURL(url);
+  const totalFileCount = p2pFiles.length + files.length;
+
+  const handleDownloadAll = async () => {
+    if (totalFileCount === 0 || downloadingAll) return;
+    setDownloadingAll(true);
+    setDownloadAllDone(false);
+    try {
+      if (hasP2pFiles) await downloadAllP2pFiles(p2pFiles);
+      if (hasCloudFiles) await downloadAllCloudFiles(files);
+      setDownloadAllDone(true);
+    } catch (err) {
+      console.error('Download all failed:', err);
+    } finally {
+      setDownloadingAll(false);
+    }
   };
 
   if (loading) {
@@ -182,8 +217,8 @@ export default function ReceivePage() {
               )}
               <p className="max-w-md text-base leading-relaxed text-white/65">
                 {hasP2pFiles
-                  ? 'Received directly from the sender — save each file with Download below.'
-                  : 'Download from secure cloud storage below.'}
+                  ? 'Received directly from the sender — use Download all to save every file.'
+                  : 'Use Download all to save every file from secure cloud storage.'}
               </p>
               <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-blue/20 bg-accent-blue/12 px-3 py-1.5 text-[0.8125rem] font-medium text-blue-300">
                 {isCloudMode ? (
@@ -241,6 +276,35 @@ export default function ReceivePage() {
           </div>
         )}
 
+        {ready && (
+          <div className="flex w-full flex-col gap-3">
+            <Button
+              type="button"
+              className="w-full py-3.5 text-base"
+              onClick={handleDownloadAll}
+              disabled={downloadingAll}
+              id="download-all-btn"
+            >
+              {downloadingAll ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                  Downloading…
+                </>
+              ) : (
+                <>
+                  <Download className="h-5 w-5" aria-hidden />
+                  Download all ({totalFileCount} file{totalFileCount === 1 ? '' : 's'})
+                </>
+              )}
+            </Button>
+            {downloadAllDone && (
+              <p className="text-center text-sm text-accent-green" role="status">
+                Downloads started — check your browser downloads folder.
+              </p>
+            )}
+          </div>
+        )}
+
         <GlassCard className="w-full p-6 sm:p-7">
           {hasP2pFiles && (
             <section className="flex flex-col gap-3.5">
@@ -250,11 +314,9 @@ export default function ReceivePage() {
               <ul className="space-y-3">
                 {p2pFiles.map((f, i) => (
                   <li key={`${f.name}-${f.size}-${i}`}>
-                    <FileDownloadRow
+                    <FileListItem
                       name={f.name}
                       meta={`${formatSize(f.size)} · ${f.type || 'application/octet-stream'}`}
-                      onDownload={() => downloadP2pFile(f)}
-                      downloadId={`p2p-download-btn-${i}`}
                     />
                   </li>
                 ))}
@@ -273,11 +335,9 @@ export default function ReceivePage() {
               <ul className="space-y-3">
                 {files.map((file) => (
                   <li key={file.id}>
-                    <FileDownloadRow
+                    <FileListItem
                       name={file.filename}
                       meta={`${formatSize(file.size)} · ${file.mimeType}`}
-                      downloadHref={getFileDownloadUrl(file.id)}
-                      downloadId={`download-btn-${file.id}`}
                     />
                   </li>
                 ))}

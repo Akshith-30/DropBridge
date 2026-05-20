@@ -34,13 +34,14 @@ import { runSenderTransfer } from '../webrtc/p2pTransfer';
 import { resolveShareLink } from '../utils/shareLink';
 import { formatLinkExpiry } from '../utils/formatExpiry';
 import { upsertKnownContact } from '../utils/knownContacts';
+import { shouldPollSenderSession } from '../lib/sessionPolling';
 
 const P2P_STATUS_LABELS = {
   waiting: 'Waiting for the receiver to open your link…',
   connecting: 'Setting up a direct connection…',
   transferring: 'Sending your files…',
-  awaiting_ack: 'Almost done — confirming delivery…',
-  completed: 'The receiver has your file.',
+  awaiting_ack: 'Waiting for the receiver to confirm delivery…',
+  completed: 'The receiver has your files.',
   failed: 'Direct transfer could not finish.',
 };
 
@@ -62,14 +63,23 @@ export default function StatusPage() {
   const [emailNotified, setEmailNotified] = useState(false);
   const p2pStarted = useRef(false);
   const cloudStarted = useRef(false);
+  const p2pStatusRef = useRef(p2pStatus);
+  const cloudStatusRef = useRef(cloudStatus);
+  p2pStatusRef.current = p2pStatus;
+  cloudStatusRef.current = cloudStatus;
 
   useEffect(() => {
+    let cancelled = false;
+    let intervalId = null;
+
     const fetchData = async () => {
       try {
         const [sessionRes, filesRes] = await Promise.all([
           getSession(sessionId),
           getFilesBySession(sessionId),
         ]);
+        if (cancelled) return;
+
         const nextSession = sessionRes.data;
         if (
           nextSession.status === 'CONNECTING' ||
@@ -80,16 +90,30 @@ export default function StatusPage() {
         }
         setSession(nextSession);
         setFiles(filesRes.data);
+
+        const keepPolling = shouldPollSenderSession({
+          session: nextSession,
+          isCloudMode: nextSession.mode === 'CLOUD',
+          p2pStatus: p2pStatusRef.current,
+        });
+        if (!keepPolling && intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
       } catch (err) {
         console.error('Failed to load session:', err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 2000);
-    return () => clearInterval(interval);
+    intervalId = setInterval(fetchData, 4000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
   }, [sessionId]);
 
   const isCloudMode = session?.mode === 'CLOUD';
@@ -256,9 +280,9 @@ export default function StatusPage() {
     !p2pDelivered &&
     !isFailed;
   const isActiveCloud = isCloudMode && cloudStatus === 'uploading';
+  const p2pAwaitingConfirm = !isCloudMode && p2pStatus === 'awaiting_ack';
   const showProgress =
-    isActiveP2p &&
-    (p2pStatus === 'transferring' || p2pStatus === 'awaiting_ack' || p2pProgress > 0);
+    isActiveP2p && (p2pStatus === 'transferring' || (p2pProgress > 0 && !p2pAwaitingConfirm));
   const expiryLabel = formatLinkExpiry(session.expiresAt);
   const isDirectToKnown = !isCloudMode && !!session.targetDeviceId;
   const targetNotified = session.targetNotified === true;
@@ -445,10 +469,16 @@ export default function StatusPage() {
 
               {showProgress && (
                 <div className="mt-4">
-                  <TransferProgress
-                    value={p2pProgress}
-                    label={p2pStatus === 'awaiting_ack' ? 'Confirming' : 'Sending'}
-                  />
+                  <TransferProgress value={p2pProgress} label="Sending" />
+                </div>
+              )}
+
+              {p2pAwaitingConfirm && (
+                <div className="mt-4 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin text-accent-blue" aria-hidden />
+                  <p className="text-sm text-white/70">
+                    Files sent — waiting for the receiver to confirm they got everything.
+                  </p>
                 </div>
               )}
             </div>

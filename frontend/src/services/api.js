@@ -89,7 +89,8 @@ export const uploadFile = (sessionId, file, onProgress) => {
 
 export const getFilesBySession = (sessionId) => api.get(`/files/session/${sessionId}`);
 
-export const getFileDownloadUrl = (fileId) => `/api/files/${fileId}/download`;
+/** Full URL for cloud file download (works on Vercel + local dev). */
+export { getCloudFileDownloadUrl as getFileDownloadUrl } from '../lib/downloadFiles';
 
 export const resolvePairingCode = (pairingCode) =>
   api.get(`/devices/resolve/${pairingCode}`);
