@@ -13,14 +13,14 @@
 services:
   - type: web
     name: dropbridge-api
-    runtime: java
+    # Render has no native "java" runtime — use Docker (see backend/Dockerfile)
+    runtime: docker
     plan: free                      # upgrade to Starter ($7/mo) to avoid cold starts
     region: oregon                  # pick closest to your users
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
 
-    buildCommand: cd backend && mvn -B package -DskipTests -q
-    startCommand: java -jar backend/target/dropbridge-0.0.1-SNAPSHOT.jar --spring.profiles.active=production
-
-    healthCheckPath: /actuator/health   # add spring-boot-starter-actuator if you want this
+    healthCheckPath: /actuator/health
 
     envVars:
       # ── Database (Supabase) ─────────────────────────────────────────────

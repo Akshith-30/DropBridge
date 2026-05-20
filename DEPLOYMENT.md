@@ -80,7 +80,7 @@ Optional for local cross-NAT tests: same vars in `frontend/.env.local`.
 ## 4. Backend — Render
 
 1. In [Render](https://render.com) → **New** → **Blueprint** (or connect repo and use [render.yaml](render.yaml)).
-2. Point the blueprint at this repository; confirm **build** runs `cd backend && mvn -B package -DskipTests -q` and **start** uses `--spring.profiles.active=production`.
+2. Point the blueprint at this repository. Backend uses **`runtime: docker`** ([`backend/Dockerfile`](backend/Dockerfile)) — Render does not support `runtime: java`.
 3. Set **all** environment variables from `render.yaml` comments + sections below.
 4. **First deploy / empty database:** [render.yaml](render.yaml) sets `SPRING_JPA_HIBERNATE_DDL_AUTO=update` by default. After the first successful boot and schema exists, change it to **`validate`** in the Render dashboard and redeploy.
 5. Copy the service **public URL**, e.g. `https://dropbridge-api.onrender.com`.
