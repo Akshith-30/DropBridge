@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, Download } from 'lucide-react';
 import TransferModeTabs from '../components/TransferModeTabs';
 import TransferActionButton from '../components/TransferActionButton';
@@ -15,8 +15,8 @@ import {
 } from '../lib/uploadLimits';
 import { formatApiError } from '../lib/runtimeConfig';
 import { createSession, joinSessionByCode } from '../services/api';
+import { resolveSessionTitle } from '../lib/sessionTitle';
 import { getDeviceId, getDisplayName } from '../utils/deviceIdentity';
-import { reconnectPresence } from '../webrtc/presenceClient';
 import {
   formField,
   formLabel,
@@ -42,8 +42,16 @@ function normalizeShareCode(raw) {
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { selectedFiles, error, setSession, setTransferStatus, setError } = useTransferStore();
   const [pageMode, setPageMode] = useState('send');
+
+  useEffect(() => {
+    if (location.state?.openReceive) {
+      setPageMode('receive');
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
   const [transferMethod, setTransferMethod] = useState('direct');
   const [title, setTitle] = useState('');
   const [storageHours, setStorageHours] = useState(72);
@@ -73,7 +81,7 @@ export default function HomePage() {
 
       const isDirect = transferMethod === 'direct';
       const sessionRes = await createSession({
-        title: title.trim() || undefined,
+        title: resolveSessionTitle(title, selectedFiles),
         mode: transferMethod === 'stored' ? 'CLOUD' : 'P2P',
         storageHours: transferMethod === 'stored' ? storageHours : undefined,
         recipientEmail:
@@ -127,9 +135,6 @@ export default function HomePage() {
   const handlePageModeChange = (next) => {
     setPageMode(next);
     setError(null);
-    if (next === 'receive') {
-      reconnectPresence();
-    }
   };
 
   const heightDeps = [pageMode, transferMethod, selectedFiles.length, error, shareCodeInput.length];
@@ -154,7 +159,7 @@ export default function HomePage() {
             </h1>
             <p className="mx-auto max-w-[36rem] text-[clamp(0.9375rem,2.5vw,1.125rem)] leading-relaxed text-white/55">
               {pageMode === 'send'
-                ? 'Pick a file below, or use My network (top right) to send to someone you know.'
+                ? 'Pick files here for a share link, or use My network to send to someone you know.'
                 : 'Enter the 6-character code from the sender.'}
             </p>
           </div>

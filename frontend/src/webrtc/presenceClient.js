@@ -1,4 +1,6 @@
 import { getDeviceId, getDisplayName } from '../utils/deviceIdentity';
+import { getAccessToken } from '../store/authStore';
+import useContactsStore from '../store/contactsStore';
 import { buildPresenceWsUrl } from '../lib/runtimeConfig';
 
 const PRESENCE_TYPES = {
@@ -10,9 +12,14 @@ const PRESENCE_TYPES = {
   ERROR: 'ERROR',
 };
 
+/** The one socket we consider active (never cleared by a stale socket's onclose). */
 let ws = null;
 let listeners = new Set();
 let reconnectTimer = null;
+let clearPeersTimer = null;
+let lastConnectionKey = null;
+let reconnectAttempt = 0;
+let intentionalClose = false;
 const incomingTransferHandlers = new Set();
 
 /** deviceId -> displayName (peers currently online per presence hub) */
@@ -52,28 +59,48 @@ function clearOnlinePeers() {
   notifyOnlineListeners();
 }
 
-function applyPresenceSync(peers) {
-  if (!Array.isArray(peers)) return;
-  let changed = false;
-  for (const peer of peers) {
-    if (peer?.deviceId && !onlinePeers.has(peer.deviceId)) {
-      onlinePeers.set(peer.deviceId, peer.displayName || '');
-      changed = true;
-    } else if (peer?.deviceId) {
-      const name = peer.displayName || '';
-      if (onlinePeers.get(peer.deviceId) !== name) {
-        onlinePeers.set(peer.deviceId, name);
-        changed = true;
+function connectionKey() {
+  return `${getDeviceId()}|${getAccessToken() || 'guest'}`;
+}
+
+function allowedPeerIds() {
+  if (!getAccessToken()) return null;
+  const { contacts, loaded } = useContactsStore.getState();
+  if (!loaded) return null;
+  const ids = new Set();
+  for (const contact of contacts) {
+    for (const device of contact.devices || []) {
+      if (device.deviceId) {
+        ids.add(device.deviceId.toLowerCase());
       }
     }
   }
-  if (changed) {
-    notifyOnlineListeners();
+  return ids;
+}
+
+/** Replace local online set with server snapshot (authoritative). */
+function applyPresenceSync(peers) {
+  const allowed = allowedPeerIds();
+  onlinePeers.clear();
+  if (Array.isArray(peers)) {
+    for (const peer of peers) {
+      if (allowed && peer?.deviceId && !allowed.has(peer.deviceId.toLowerCase())) {
+        continue;
+      }
+      if (peer?.deviceId) {
+        onlinePeers.set(peer.deviceId, peer.displayName || '');
+      }
+    }
   }
+  notifyOnlineListeners();
 }
 
 function getPresenceUrl() {
-  return buildPresenceWsUrl(getDeviceId(), getDisplayName() || 'My device');
+  return buildPresenceWsUrl(
+    getDeviceId(),
+    getDisplayName() || 'My device',
+    getAccessToken() || undefined
+  );
 }
 
 function notifyListeners(message) {
@@ -90,9 +117,15 @@ function handlePresenceMessage(data) {
   const type = normalizePresenceType(data.type);
 
   if (type === PRESENCE_TYPES.DEVICE_ONLINE) {
-    setPeerOnline(data.deviceId, data.displayName);
+    const allowed = allowedPeerIds();
+    if (!allowed || (data.deviceId && allowed.has(data.deviceId.toLowerCase()))) {
+      setPeerOnline(data.deviceId, data.displayName);
+    }
   } else if (type === PRESENCE_TYPES.DEVICE_OFFLINE) {
-    setPeerOffline(data.deviceId);
+    const allowed = allowedPeerIds();
+    if (!allowed || (data.deviceId && allowed.has(data.deviceId.toLowerCase()))) {
+      setPeerOffline(data.deviceId);
+    }
   } else if (type === PRESENCE_TYPES.PRESENCE_SYNC) {
     applyPresenceSync(data.onlinePeers);
   }
@@ -111,62 +144,131 @@ function handlePresenceMessage(data) {
 }
 
 function scheduleReconnect() {
-  if (reconnectTimer) return;
+  if (reconnectTimer || intentionalClose) return;
+  const delay = Math.min(30000, 2000 * 2 ** reconnectAttempt);
+  reconnectAttempt += 1;
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null;
     connectPresence();
-  }, 3000);
+  }, delay);
 }
 
-export function connectPresence() {
-  if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) {
-    return;
-  }
-
-  try {
-    ws = new WebSocket(getPresenceUrl());
-
-    ws.onopen = () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        handlePresenceMessage(data);
-      } catch (err) {
-        console.error('Invalid presence message', err);
-      }
-    };
-
-    ws.onclose = () => {
-      ws = null;
-      clearOnlinePeers();
-      scheduleReconnect();
-    };
-
-    ws.onerror = () => {
-      ws?.close();
-    };
-  } catch (err) {
-    console.error('Presence connect failed', err);
-    scheduleReconnect();
-  }
-}
-
-export function disconnectPresence() {
+function cancelReconnectTimer() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  if (ws) {
-    ws.close();
+}
+
+/** Close a socket without touching the global `ws` (avoids stale onclose wiping a newer connection). */
+function closeSocket(socket, { intentional = true } = {}) {
+  if (!socket) return;
+  if (intentional) {
+    intentionalClose = true;
+  }
+  try {
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+      socket.close();
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function bindSocketHandlers(socket, key) {
+  socket.onopen = () => {
+    if (ws !== socket) return;
+    reconnectAttempt = 0;
+    if (clearPeersTimer) {
+      clearTimeout(clearPeersTimer);
+      clearPeersTimer = null;
+    }
+    cancelReconnectTimer();
+  };
+
+  socket.onmessage = (event) => {
+    if (ws !== socket) return;
+    try {
+      const data = JSON.parse(event.data);
+      handlePresenceMessage(data);
+    } catch (err) {
+      console.error('Invalid presence message', err);
+    }
+  };
+
+  socket.onclose = () => {
+    if (ws !== socket) return;
     ws = null;
+    lastConnectionKey = null;
+    const shouldReconnect = !intentionalClose;
+    intentionalClose = false;
+    if (clearPeersTimer) clearTimeout(clearPeersTimer);
+    clearPeersTimer = window.setTimeout(() => {
+      clearPeersTimer = null;
+      clearOnlinePeers();
+    }, 2500);
+    if (shouldReconnect) {
+      scheduleReconnect();
+    }
+  };
+
+  socket.onerror = () => {
+    if (ws === socket) {
+      socket.close();
+    }
+  };
+}
+
+export function connectPresence() {
+  const key = connectionKey();
+  if (ws?.readyState === WebSocket.OPEN && lastConnectionKey === key) {
+    return;
+  }
+  if (ws?.readyState === WebSocket.CONNECTING && lastConnectionKey === key) {
+    return;
+  }
+
+  cancelReconnectTimer();
+
+  const previous = ws;
+  lastConnectionKey = key;
+  intentionalClose = false;
+
+  const socket = new WebSocket(getPresenceUrl());
+  ws = socket;
+  bindSocketHandlers(socket, key);
+
+  if (previous && previous !== socket) {
+    closeSocket(previous, { intentional: true });
+    intentionalClose = false;
+  }
+}
+
+export function disconnectPresence() {
+  intentionalClose = true;
+  reconnectAttempt = 0;
+  cancelReconnectTimer();
+  if (clearPeersTimer) {
+    clearTimeout(clearPeersTimer);
+    clearPeersTimer = null;
+  }
+  const current = ws;
+  ws = null;
+  lastConnectionKey = null;
+  if (current) {
+    closeSocket(current, { intentional: true });
   }
   clearOnlinePeers();
+  intentionalClose = false;
+}
+
+/** Reconnect only when auth/device identity changed or the socket is down. */
+export function refreshPresenceSync() {
+  const key = connectionKey();
+  if (ws?.readyState === WebSocket.OPEN && key === lastConnectionKey) {
+    return;
+  }
+  reconnectPresence();
 }
 
 export function onPresenceMessage(listener) {
@@ -209,7 +311,10 @@ export function setOnIncomingTransfer(handler) {
 }
 
 export function reconnectPresence() {
-  disconnectPresence();
+  if (ws) {
+    closeSocket(ws, { intentional: true });
+    intentionalClose = false;
+  }
   connectPresence();
 }
 

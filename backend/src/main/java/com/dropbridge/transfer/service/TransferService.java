@@ -2,7 +2,11 @@ package com.dropbridge.transfer.service;
 
 import com.dropbridge.auth.AuthContext;
 import com.dropbridge.common.exception.ResourceNotFoundException;
+import com.dropbridge.common.exception.BadRequestException;
+import com.dropbridge.file.dto.FileChipResponse;
+import com.dropbridge.file.model.TransferFile;
 import com.dropbridge.device.service.DevicePresenceHub;
+import com.dropbridge.network.service.ContactService;
 import com.dropbridge.file.repository.FileRepository;
 import com.dropbridge.qr.service.QRCodeService;
 import com.dropbridge.transfer.dto.CreateTransferRequest;
@@ -34,6 +38,7 @@ public class TransferService {
     private final DevicePresenceHub devicePresenceHub;
     private final QRCodeService qrCodeService;
     private final TransferNotificationService notificationService;
+    private final ContactService contactService;
 
     @Value("${dropbridge.session.expiration-hours}")
     private int expirationHours;
@@ -106,6 +111,12 @@ public class TransferService {
         }
 
         UUID senderUserId = AuthContext.currentUserId().orElse(null);
+
+        if (targetDeviceId != null && senderUserId != null) {
+            if (!contactService.isInNetwork(senderUserId, targetDeviceId)) {
+                throw new BadRequestException("That device is not in your network. Add them in My Network first.");
+            }
+        }
         if (senderDisplayName == null || senderDisplayName.isBlank()) {
             senderDisplayName = AuthContext.currentPrincipal()
                     .map(p -> {
@@ -158,10 +169,20 @@ public class TransferService {
      * Recent transfer sessions created while signed in (sender_user_id set).
      */
     @Transactional(readOnly = true)
-    public List<TransferSummaryResponse> listMySessions(UUID userId) {
+    public List<TransferSummaryResponse> listSentSessions(UUID userId) {
         int size = Math.min(100, Math.max(1, historyPageSize));
         return sessionRepository
                 .findBySenderUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, size))
+                .stream()
+                .map(this::toSummary)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<TransferSummaryResponse> listReceivedSessions(UUID userId) {
+        int size = Math.min(100, Math.max(1, historyPageSize));
+        return sessionRepository
+                .findByReceiverUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, size))
                 .stream()
                 .map(this::toSummary)
                 .toList();
@@ -202,6 +223,11 @@ public class TransferService {
     }
 
     private SessionResponse registerReceiverJoin(TransferSession session) {
+        if (AuthContext.currentUserId().isPresent()) {
+            session.setReceiverUserId(AuthContext.currentUserId().get());
+            session = sessionRepository.save(session);
+        }
+
         if (session.getMode() == TransferMode.CLOUD && sessionHasFiles(session.getId())) {
             if (session.getStatus() != TransferStatus.COMPLETED) {
                 session.setStatus(TransferStatus.TRANSFERRING);
@@ -321,6 +347,16 @@ public class TransferService {
     }
 
     private TransferSummaryResponse toSummary(TransferSession session) {
+        List<TransferFile> sessionFiles = fileRepository.findBySessionId(session.getId());
+        long totalBytes = sessionFiles.stream().mapToLong(TransferFile::getSize).sum();
+        List<FileChipResponse> chips = sessionFiles.stream()
+                .map(f -> FileChipResponse.builder()
+                        .filename(f.getFilename())
+                        .size(f.getSize())
+                        .mimeType(f.getMimeType())
+                        .build())
+                .toList();
+
         return TransferSummaryResponse.builder()
                 .sessionId(session.getId())
                 .shareCode(session.getShareCode())
@@ -328,6 +364,10 @@ public class TransferService {
                 .status(session.getStatus().name())
                 .mode(session.getMode().name())
                 .targetDeviceId(session.getTargetDeviceId())
+                .senderDisplayName(session.getSenderDisplayName())
+                .fileCount((long) sessionFiles.size())
+                .totalSizeBytes(totalBytes)
+                .files(chips)
                 .expiresAt(session.getExpiresAt())
                 .createdAt(session.getCreatedAt())
                 .build();

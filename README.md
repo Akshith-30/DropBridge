@@ -193,27 +193,23 @@ FileDrop/
 
 ## Local development
 
-**Prerequisites:** Java 21+, Node 20+, PostgreSQL running with DB `dropbridge` for local dev (`mvn spring-boot:run`). **Tests** use the `test` profile with in-memory H2 — run `mvn verify` without Postgres.
+**Full guide:** **[LOCAL_DEV.md](LOCAL_DEV.md)** (local Postgres vs Supabase, env files, troubleshooting).
+
+**Prerequisites:** Java 21+, Node 20+, PostgreSQL with database `dropbridge`. **Tests** use H2 — `mvn verify` needs no Postgres.
 
 ```bash
-# Backend (from repo root)
-cd backend
-mvn spring-boot:run
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev
+createdb dropbridge                    # once
+cd backend && mvn spring-boot:run      # → localhost:5432/dropbridge
+cd frontend && npm install && npm run dev   # → http://localhost:5173 (uses .env.development)
+./scripts/check-local-env.sh           # verify wiring
 ```
 
-- API: `http://localhost:8080`
-- Vite dev server: `http://localhost:5173` (proxies `/api` and `/ws` to backend automatically)
+| Mode | Frontend config | Backend | Database |
+|------|-----------------|---------|----------|
+| **Local** | `frontend/.env.development` | default `application.yml` | `localhost` Postgres |
+| **Production** | `frontend/.env.production` + Vercel | `production` profile on Render | Supabase |
 
-**Secrets for local dev** — create `frontend/.env.local` (gitignored):
-```bash
-# No vars needed for local dev — Vite proxy handles API/WS routing
-# Add VITE_TURN_* here only if testing cross-NAT P2P locally
-```
+Console on `npm run dev` should show `[DropBridge] env: LOCAL` and `API → /api`.
 
 ---
 

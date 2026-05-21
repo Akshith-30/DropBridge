@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import {
-  ArrowLeft,
   Copy,
   Check,
   Clock,
@@ -12,6 +11,8 @@ import {
   Users,
 } from 'lucide-react';
 import GlassCard from '../components/GlassCard';
+import PageBackButton from '../components/PageBackButton';
+import { PAGE_CONTAINER, PAGE_MAIN } from '../lib/pageLayout';
 import QRDisplay from '../components/QRDisplay';
 import TransferStatusBadge from '../components/TransferStatus';
 import TransferProgress from '../components/TransferProgress';
@@ -33,8 +34,8 @@ import {
 import { runSenderTransfer } from '../webrtc/p2pTransfer';
 import { resolveShareLink } from '../utils/shareLink';
 import { formatLinkExpiry } from '../utils/formatExpiry';
-import { upsertKnownContact } from '../utils/knownContacts';
 import { shouldPollSenderSession } from '../lib/sessionPolling';
+import { reportSessionFailed } from '../lib/transferFailure';
 
 const P2P_STATUS_LABELS = {
   waiting: 'Waiting for the receiver to open your link…',
@@ -47,7 +48,6 @@ const P2P_STATUS_LABELS = {
 
 export default function StatusPage() {
   const { sessionId } = useParams();
-  const navigate = useNavigate();
   const location = useLocation();
   const targetContactName = location.state?.targetContactName;
   const { selectedFiles, clearFiles } = useTransferStore();
@@ -90,6 +90,22 @@ export default function StatusPage() {
         }
         setSession(nextSession);
         setFiles(filesRes.data);
+
+        if (nextSession.status === 'COMPLETED' && nextSession.mode === 'P2P') {
+          setP2pStatus('completed');
+          setP2pError(null);
+        } else if (
+          nextSession.status === 'FAILED' &&
+          nextSession.mode === 'P2P' &&
+          p2pStatusRef.current !== 'completed'
+        ) {
+          setP2pStatus('failed');
+          setP2pError(
+            (prev) =>
+              prev ||
+              'The transfer could not be completed. The receiver may have disconnected.'
+          );
+        }
 
         const keepPolling = shouldPollSenderSession({
           session: nextSession,
@@ -194,14 +210,7 @@ export default function StatusPage() {
       files: selectedFiles,
       onProgress: setP2pProgress,
       onStatus: setP2pStatus,
-      onPeerDeviceInfo: (msg) => {
-        if (msg.deviceId && msg.displayName) {
-          upsertKnownContact({
-            deviceId: msg.deviceId,
-            name: msg.displayName,
-          });
-        }
-      },
+      onPeerDeviceInfo: () => {},
     })
       .then(async () => {
         setP2pError(null);
@@ -210,11 +219,22 @@ export default function StatusPage() {
         setSession(sessionRes.data);
         clearFiles();
       })
-      .catch((err) => {
+      .catch(async (err) => {
         console.error('P2P transfer failed:', err);
         setP2pError(err.message || 'P2P transfer failed');
         setP2pStatus('failed');
         p2pStarted.current = false;
+        await reportSessionFailed(sessionId);
+        try {
+          const sessionRes = await getSession(sessionId);
+          setSession(sessionRes.data);
+          if (sessionRes.data.status === 'COMPLETED') {
+            setP2pStatus('completed');
+            setP2pError(null);
+          }
+        } catch {
+          // ignore refresh errors
+        }
       });
   }, [loading, session, sessionId, selectedFiles, files.length, clearFiles]);
 
@@ -247,13 +267,14 @@ export default function StatusPage() {
 
   if (!session) {
     return (
-      <main className="flex min-h-[calc(100vh-4.5rem)] flex-1 flex-col items-center justify-center px-4 pb-10 pt-[5.5rem]">
-        <GlassCard className="p-8 text-center max-w-md">
-          <p className="text-white/70 text-lg mb-6">Session not found</p>
-          <button type="button" onClick={() => navigate('/')} className="inline-flex items-center justify-center gap-2 rounded-xl border-0 bg-gradient-to-br from-accent-blue to-accent-purple px-7 py-3 text-[0.95rem] font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(59,130,246,0.3)]">
-            Go home
-          </button>
-        </GlassCard>
+      <main className={PAGE_MAIN}>
+        <div className={PAGE_CONTAINER}>
+          <PageBackButton fallback="/" />
+          <GlassCard className="p-8 text-center">
+            <p className="text-white/70 text-lg mb-2">Session not found</p>
+            <p className="text-white/50 text-sm">This link may have expired or the session was removed.</p>
+          </GlassCard>
+        </div>
       </main>
     );
   }
@@ -269,9 +290,13 @@ export default function StatusPage() {
   const cloudReceiverActive =
     isCloudMode && session.status === 'TRANSFERRING' && !cloudDownloaded;
   const cloudReady = cloudHasFile && !cloudDownloaded && !cloudReceiverActive;
-  const p2pDelivered = !isCloudMode && p2pStatus === 'completed';
+  const p2pDelivered =
+    !isCloudMode && (p2pStatus === 'completed' || session.status === 'COMPLETED');
   const isFailed =
-    (!isCloudMode && p2pStatus === 'failed') || cloudStatus === 'failed';
+    !p2pDelivered &&
+    (session.status === 'FAILED' ||
+      (!isCloudMode && p2pStatus === 'failed') ||
+      cloudStatus === 'failed');
   const isActiveP2p =
     !isCloudMode &&
     selectedFiles.length > 0 &&
@@ -286,7 +311,8 @@ export default function StatusPage() {
   const expiryLabel = formatLinkExpiry(session.expiresAt);
   const isDirectToKnown = !isCloudMode && !!session.targetDeviceId;
   const targetNotified = session.targetNotified === true;
-  const showShareDetails = isCloudMode || !isDirectToKnown || !targetNotified;
+  const showShareDetails =
+    !isFailed && (isCloudMode || !isDirectToKnown || !targetNotified);
 
   const pageTitle = p2pDelivered || cloudDownloaded
     ? 'Transfer complete'
@@ -313,7 +339,7 @@ export default function StatusPage() {
               : isDirectToKnown && targetNotified
                 ? `Waiting for ${targetContactName || 'your contact'} to accept on their device. Keep this tab open.`
                 : isDirectToKnown
-                  ? 'They are offline — share the code or QR below as a fallback.'
+                  ? 'They are offline — share the code or QR below so they can join manually.'
                   : 'Share the code or QR below — keep this tab open until they connect.';
 
   const badgeStatus = p2pDelivered || cloudDownloaded
@@ -325,17 +351,9 @@ export default function StatusPage() {
         : session.status;
 
   return (
-    <main className="flex min-h-[calc(100vh-4.5rem)] flex-1 flex-col items-center justify-center px-4 pb-10 pt-[5.5rem]">
-      <div className="flex w-full max-w-[40rem] flex-col gap-5">
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-white/55 hover:text-white transition-colors text-sm self-start -mt-2"
-          id="back-btn"
-        >
-          <ArrowLeft className="w-4 h-4" aria-hidden />
-          New transfer
-        </button>
+    <main className={PAGE_MAIN}>
+      <div className={PAGE_CONTAINER}>
+        <PageBackButton fallback="/" />
 
         <header className="flex flex-col items-center gap-3 text-center">
           <h1>{pageTitle}</h1>
@@ -485,11 +503,18 @@ export default function StatusPage() {
           </GlassCard>
         )}
 
-        {isFailed && p2pError && (
+        {isFailed && (
           <div className="flex items-start gap-3.5 rounded-2xl border border-red-500/25 bg-red-500/10 p-4 px-5" role="alert">
             <div>
-              <p className="mb-1 text-[0.9375rem] font-semibold text-white">Could not send via P2P</p>
-              <p className="text-sm leading-snug text-white/65">{p2pError}</p>
+              <p className="mb-1 text-[0.9375rem] font-semibold text-white">
+                {isCloudMode ? 'Upload failed' : 'Transfer failed'}
+              </p>
+              <p className="text-sm leading-snug text-white/65">
+                {p2pError ||
+                  (session.status === 'FAILED'
+                    ? 'The transfer did not complete. Start a new transfer to try again.'
+                    : 'Something went wrong. Start a new transfer to try again.')}
+              </p>
             </div>
           </div>
         )}

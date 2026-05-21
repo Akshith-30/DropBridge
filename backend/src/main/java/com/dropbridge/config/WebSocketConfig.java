@@ -1,5 +1,6 @@
 package com.dropbridge.config;
 
+import com.dropbridge.device.PresenceJwtHandshakeInterceptor;
 import com.dropbridge.device.PresenceWebSocketHandler;
 import com.dropbridge.webrtc.SignalingWebSocketHandler;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final SignalingWebSocketHandler signalingWebSocketHandler;
     private final PresenceWebSocketHandler presenceWebSocketHandler;
+    private final PresenceJwtHandshakeInterceptor presenceJwtHandshakeInterceptor;
 
     @Value("${dropbridge.frontend.url}")
     private String frontendUrl;
@@ -34,6 +36,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         registry.addHandler(signalingWebSocketHandler, "/ws/signaling")
                 .setAllowedOriginPatterns(origins);
         registry.addHandler(presenceWebSocketHandler, "/ws/presence")
+                .addInterceptors(presenceJwtHandshakeInterceptor)
                 .setAllowedOriginPatterns(origins);
     }
 }

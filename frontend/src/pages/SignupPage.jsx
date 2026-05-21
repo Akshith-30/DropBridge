@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import Button from '../components/ui/Button';
+import PageBackButton from '../components/PageBackButton';
+import { PAGE_CONTAINER_NARROW, PAGE_MAIN } from '../lib/pageLayout';
 import { register } from '../services/authApi';
 import useAuthStore from '../store/authStore';
 import { setDisplayName } from '../utils/deviceIdentity';
@@ -42,8 +44,10 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="flex min-h-[calc(100vh-4.5rem)] flex-1 flex-col items-center justify-center px-4 pb-10 pt-[5.5rem]">
-      <div className="w-full max-w-md animate-fade-in-up rounded-[1.25rem] border border-white/12 bg-[rgba(14,14,20,0.92)] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8">
+    <main className={PAGE_MAIN}>
+      <div className={PAGE_CONTAINER_NARROW}>
+        <PageBackButton fallback="/" />
+        <div className="w-full animate-fade-in-up rounded-[1.25rem] border border-white/12 bg-[rgba(14,14,20,0.92)] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8">
         <h1 className="mb-2 text-2xl font-bold text-white">Create account</h1>
         <p className="mb-6 text-sm text-white/55">
           Stateless sign-in — we use a lightweight JWT, no server sessions. Guest transfers still work without an account.
@@ -120,6 +124,7 @@ export default function SignupPage() {
             Sign in
           </Link>
         </p>
+        </div>
       </div>
     </main>
   );

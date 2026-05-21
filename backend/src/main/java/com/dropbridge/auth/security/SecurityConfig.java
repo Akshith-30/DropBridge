@@ -33,11 +33,15 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/transfers/mine", "/api/transfers/mine/**")
+                                .authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/transfers/*/files").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/transfers/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/transfers/**").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/transfers/**").permitAll()
                         .requestMatchers("/api/files/**").permitAll()
-                        .requestMatchers("/api/devices/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/devices/**").permitAll()
+                        .requestMatchers("/api/contacts", "/api/contacts/**").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

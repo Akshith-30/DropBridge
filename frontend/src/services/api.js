@@ -2,10 +2,7 @@ import axios from 'axios';
 import { getAccessToken } from '../store/authStore';
 import { getApiBaseUrl } from '../lib/runtimeConfig';
 
-const BASE_URL = getApiBaseUrl();
-
 const api = axios.create({
-  baseURL: BASE_URL,
   timeout: 90_000, // Render free tier cold start can take ~50s
   headers: {
     'Content-Type': 'application/json',
@@ -13,9 +10,14 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  config.baseURL = getApiBaseUrl();
   const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (import.meta.env.DEV) {
+    const path = config.url || '';
+    console.debug('[DropBridge API]', config.method?.toUpperCase(), `${config.baseURL}${path}`);
   }
   return config;
 });
@@ -57,8 +59,17 @@ export const notifyRecipient = (sessionId) =>
 
 export const getSession = (sessionId) => api.get(`/transfers/${sessionId}`);
 
-/** Recent sessions for the signed-in user (Bearer JWT). */
-export const listMyTransferSessions = () => api.get('/transfers/mine');
+/** Send history — sessions you started while signed in. */
+export const listSentTransferSessions = () => api.get('/transfers/mine/sent');
+
+/** Receive history — sessions you joined while signed in. */
+export const listReceivedTransferSessions = () => api.get('/transfers/mine/received');
+
+/** @deprecated use listSentTransferSessions */
+export const listMyTransferSessions = listSentTransferSessions;
+
+/** Cloud files with presigned preview/download URLs (history detail panel). */
+export const getSessionFiles = (sessionId) => api.get(`/transfers/${sessionId}/files`);
 
 export const joinSessionById = (sessionId) => api.post(`/transfers/${sessionId}/join`);
 
@@ -96,5 +107,15 @@ export const resolvePairingCode = (pairingCode) =>
   api.get(`/devices/resolve/${pairingCode}`);
 
 export const isDeviceOnline = (deviceId) => api.get(`/devices/${deviceId}/online`);
+
+// My Network (requires sign-in)
+export const listContacts = () => api.get('/contacts');
+
+export const addContact = (body, ownerDeviceId) =>
+  api.post('/contacts', body, {
+    params: ownerDeviceId ? { ownerDeviceId } : undefined,
+  });
+
+export const removeContact = (contactId) => api.delete(`/contacts/${contactId}`);
 
 export default api;

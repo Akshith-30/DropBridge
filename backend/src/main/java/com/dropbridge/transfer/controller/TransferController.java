@@ -4,6 +4,8 @@ import com.dropbridge.auth.AuthContext;
 import com.dropbridge.common.exception.UnauthorizedException;
 import com.dropbridge.transfer.dto.CreateTransferRequest;
 import com.dropbridge.transfer.dto.SessionResponse;
+import com.dropbridge.file.dto.SessionFileAccessResponse;
+import com.dropbridge.file.service.FileService;
 import com.dropbridge.transfer.dto.TransferSummaryResponse;
 import com.dropbridge.transfer.model.TransferStatus;
 import com.dropbridge.transfer.service.TransferService;
@@ -21,15 +23,36 @@ import java.util.UUID;
 public class TransferController {
 
     private final TransferService transferService;
+    private final FileService fileService;
 
     /**
-     * GET /api/transfers/mine — Recent sessions created while signed in (requires Bearer JWT).
+     * GET /api/transfers/mine/sent — Sessions you started while signed in.
      */
-    @GetMapping("/mine")
-    public ResponseEntity<List<TransferSummaryResponse>> listMySessions() {
+    @GetMapping({"/mine", "/mine/sent"})
+    public ResponseEntity<List<TransferSummaryResponse>> listSentSessions() {
         UUID userId = AuthContext.currentUserId()
-                .orElseThrow(() -> new UnauthorizedException("Sign in to see transfer history."));
-        return ResponseEntity.ok(transferService.listMySessions(userId));
+                .orElseThrow(() -> new UnauthorizedException("Sign in to see send history."));
+        return ResponseEntity.ok(transferService.listSentSessions(userId));
+    }
+
+    /**
+     * GET /api/transfers/mine/received — Sessions you joined while signed in.
+     */
+    @GetMapping("/mine/received")
+    public ResponseEntity<List<TransferSummaryResponse>> listReceivedSessions() {
+        UUID userId = AuthContext.currentUserId()
+                .orElseThrow(() -> new UnauthorizedException("Sign in to see receive history."));
+        return ResponseEntity.ok(transferService.listReceivedSessions(userId));
+    }
+
+    /**
+     * GET /api/transfers/{sessionId}/files — Cloud file list with presigned URLs (15 min).
+     */
+    @GetMapping("/{sessionId}/files")
+    public ResponseEntity<List<SessionFileAccessResponse>> listSessionFiles(@PathVariable UUID sessionId) {
+        UUID userId = AuthContext.currentUserId()
+                .orElseThrow(() -> new UnauthorizedException("Sign in to access transfer files."));
+        return ResponseEntity.ok(fileService.listSessionFilesForUser(sessionId, userId));
     }
 
     /**

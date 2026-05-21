@@ -3,6 +3,9 @@ package com.dropbridge.storage.service;
 import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
+import java.util.Optional;
+
 public interface StorageService {
 
     /**
@@ -19,4 +22,12 @@ public interface StorageService {
      * Delete a file by its storage key.
      */
     void delete(String storageKey);
+
+    /**
+     * Presigned GET URL for direct browser download/preview (R2). Empty for local disk storage.
+     */
+    default Optional<String> createPresignedDownloadUrl(
+            String storageKey, String filename, Duration ttl) {
+        return Optional.empty();
+    }
 }

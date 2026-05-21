@@ -11,8 +11,26 @@ import {
 } from '../lib/uploadLimits';
 import { cn } from '../lib/cn';
 
-export default function DropZone({ embedded = false }) {
-  const { selectedFiles, setFiles, removeFileAt, setError } = useTransferStore();
+export default function DropZone({
+  embedded = false,
+  /** When set, file list is controlled by parent (e.g. network send flow). */
+  files: controlledFiles,
+  onFilesChange,
+}) {
+  const transferStore = useTransferStore();
+  const selectedFiles = controlledFiles ?? transferStore.selectedFiles;
+  const isControlled = controlledFiles != null;
+
+  const setFiles = (next) => {
+    if (onFilesChange) onFilesChange(next);
+    else transferStore.setFiles(next);
+  };
+
+  const removeFileAt = (index) => {
+    setFiles(selectedFiles.filter((_, i) => i !== index));
+  };
+
+  const setError = isControlled ? () => {} : transferStore.setError;
   const [rejectMessage, setRejectMessage] = useState(null);
 
   const onDrop = useCallback(

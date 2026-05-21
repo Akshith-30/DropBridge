@@ -1,0 +1,35 @@
+##############################################################################
+# Profile: dev (default for local `mvn spring-boot:run`)
+# Creates/updates schema from JPA entities + db/dev-local-migrate.sql
+##############################################################################
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  sql:
+    init:
+      mode: always
+      separator: "@@"
+      schema-locations: classpath:db/dev-local-migrate.sql
+
+dropbridge:
+  storage:
+    type: local
+    local-path: ./uploads
+  frontend:
+    url: http://localhost:5173
+
+logging:
+  level:
+    com.dropbridge: DEBUG

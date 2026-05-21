@@ -1,5 +1,6 @@
 package com.dropbridge.storage.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.InputStreamResource;
@@ -14,9 +15,15 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.net.URI;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -33,6 +40,7 @@ import java.util.UUID;
  * Render → Environment → add these four vars.
  */
 @Service
+@Slf4j
 @ConditionalOnProperty(name = "dropbridge.storage.type", havingValue = "r2")
 public class R2StorageService implements StorageService {
 
@@ -49,17 +57,39 @@ public class R2StorageService implements StorageService {
     private String bucket;
 
     private S3Client s3;
+    private S3Presigner presigner;
 
     @PostConstruct
     public void init() {
         String endpoint = String.format("https://%s.r2.cloudflarestorage.com", accountId);
+        StaticCredentialsProvider credentials = StaticCredentialsProvider.create(
+                AwsBasicCredentials.create(accessKeyId, secretAccessKey));
         s3 = S3Client.builder()
                 .endpointOverride(URI.create(endpoint))
-                // R2 requires a region value but ignores it; "auto" is conventional
                 .region(Region.of("auto"))
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(accessKeyId, secretAccessKey)))
+                .credentialsProvider(credentials)
                 .build();
+        presigner = S3Presigner.builder()
+                .endpointOverride(URI.create(endpoint))
+                .region(Region.of("auto"))
+                .credentialsProvider(credentials)
+                .build();
+
+        log.info(
+                "R2 storage ready — bucket={}, accountId={}, endpoint={}",
+                bucket,
+                accountId,
+                endpoint);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        if (presigner != null) {
+            presigner.close();
+        }
+        if (s3 != null) {
+            s3.close();
+        }
     }
 
     @Override
@@ -72,18 +102,30 @@ public class R2StorageService implements StorageService {
             }
             String key = subdirectory + "/" + UUID.randomUUID() + extension;
 
+            long sizeBytes = file.getSize();
+            String contentType = file.getContentType();
+
             s3.putObject(
                     PutObjectRequest.builder()
                             .bucket(bucket)
                             .key(key)
-                            .contentType(file.getContentType())
-                            .contentLength(file.getSize())
+                            .contentType(contentType)
+                            .contentLength(sizeBytes)
                             .build(),
-                    RequestBody.fromInputStream(file.getInputStream(), file.getSize())
+                    RequestBody.fromInputStream(file.getInputStream(), sizeBytes)
             );
+
+            log.info(
+                    "R2 PutObject ok — bucket={}, key={}, sizeBytes={}, contentType={}, originalFilename={}",
+                    bucket,
+                    key,
+                    sizeBytes,
+                    contentType,
+                    originalFilename);
 
             return key;
         } catch (Exception e) {
+            log.error("R2 PutObject failed — bucket={}, subdirectory={}", bucket, subdirectory, e);
             throw new RuntimeException("Failed to upload file to R2", e);
         }
     }
@@ -104,6 +146,35 @@ public class R2StorageService implements StorageService {
     }
 
     @Override
+    public Optional<String> createPresignedDownloadUrl(String storageKey, String filename, Duration ttl) {
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(storageKey)
+                    .responseContentDisposition(
+                            "attachment; filename=\"" + sanitizeFilename(filename) + "\"")
+                    .build();
+
+            PresignedGetObjectRequest presigned = presigner.presignGetObject(
+                    GetObjectPresignRequest.builder()
+                            .signatureDuration(ttl)
+                            .getObjectRequest(getObjectRequest)
+                            .build());
+
+            return Optional.of(presigned.url().toString());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create presigned URL for: " + storageKey, e);
+        }
+    }
+
+    private static String sanitizeFilename(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "download";
+        }
+        return filename.replace("\"", "'");
+    }
+
+    @Override
     public void delete(String storageKey) {
         try {
             s3.deleteObject(
@@ -112,7 +183,9 @@ public class R2StorageService implements StorageService {
                             .key(storageKey)
                             .build()
             );
+            log.info("R2 DeleteObject ok — bucket={}, key={}", bucket, storageKey);
         } catch (Exception e) {
+            log.error("R2 DeleteObject failed — bucket={}, key={}", bucket, storageKey, e);
             throw new RuntimeException("Failed to delete file from R2: " + storageKey, e);
         }
     }

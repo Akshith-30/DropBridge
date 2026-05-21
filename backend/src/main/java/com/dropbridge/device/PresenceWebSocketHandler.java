@@ -13,6 +13,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -41,14 +42,15 @@ public class PresenceWebSocketHandler extends TextWebSocketHandler {
         }
 
         session.getAttributes().put(DEVICE_ID_ATTR, deviceId);
-        devicePresenceHub.register(deviceId, displayName, session);
+        UUID userId = (UUID) session.getAttributes().get(PresenceJwtHandshakeInterceptor.USER_ID_ATTR);
+        devicePresenceHub.register(deviceId, displayName, session, userId);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         String deviceId = (String) session.getAttributes().get(DEVICE_ID_ATTR);
         if (deviceId != null) {
-            devicePresenceHub.unregister(deviceId, true);
+            devicePresenceHub.unregister(deviceId, session, true);
         }
     }
 

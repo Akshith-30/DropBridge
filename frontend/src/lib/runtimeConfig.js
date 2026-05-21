@@ -15,9 +15,9 @@ function useLocalBackend() {
 
 /** Backend origin without /api */
 export function getApiBaseOrigin() {
+  if (useLocalBackend()) return '';
   const fromEnv = trimSlash(import.meta.env.VITE_API_BASE_URL);
   if (fromEnv) return fromEnv;
-  if (useLocalBackend()) return '';
   return PRODUCTION_API_BASE;
 }
 
@@ -29,13 +29,25 @@ export function getApiBaseUrl() {
 
 /** WebSocket origin (wss://host, no path) */
 export function getWsBaseOrigin() {
+  if (useLocalBackend()) return '';
   const fromEnv = trimSlash(import.meta.env.VITE_WS_URL);
   if (fromEnv) return fromEnv;
-  if (useLocalBackend()) return '';
   return PRODUCTION_WS_BASE;
 }
 
+/** Local dev: connect straight to Spring Boot — avoids Vite WS proxy ECONNRESET spam. */
+function localDevWsOrigin() {
+  if (import.meta.env.DEV && useLocalBackend()) {
+    return 'ws://127.0.0.1:8080';
+  }
+  return '';
+}
+
 export function buildSignalingWsUrl(sessionId, role) {
+  const local = localDevWsOrigin();
+  if (local) {
+    return `${local}/ws/signaling?sessionId=${sessionId}&role=${role}`;
+  }
   const base = getWsBaseOrigin();
   if (base) {
     return `${base}/ws/signaling?sessionId=${sessionId}&role=${role}`;
@@ -44,9 +56,16 @@ export function buildSignalingWsUrl(sessionId, role) {
   return `${protocol}//${window.location.host}/ws/signaling?sessionId=${sessionId}&role=${role}`;
 }
 
-export function buildPresenceWsUrl(deviceId, displayName) {
+export function buildPresenceWsUrl(deviceId, displayName, accessToken) {
+  let q = `deviceId=${encodeURIComponent(deviceId)}&displayName=${encodeURIComponent(displayName)}`;
+  if (accessToken) {
+    q += `&token=${encodeURIComponent(accessToken)}`;
+  }
+  const local = localDevWsOrigin();
+  if (local) {
+    return `${local}/ws/presence?${q}`;
+  }
   const base = getWsBaseOrigin();
-  const q = `deviceId=${encodeURIComponent(deviceId)}&displayName=${encodeURIComponent(displayName)}`;
   if (base) {
     return `${base}/ws/presence?${q}`;
   }
@@ -74,6 +93,13 @@ export function formatApiError(err, fallback = 'Something went wrong.') {
 /** Call once in dev to confirm which backend is targeted */
 export function logRuntimeTargets() {
   if (!import.meta.env.DEV) return;
+  const mode = useLocalBackend() ? 'LOCAL (Vite → :8080)' : 'REMOTE';
+  console.info(`[DropBridge] env: ${mode}`);
   console.info('[DropBridge] API →', getApiBaseUrl());
   console.info('[DropBridge] WS  →', getWsBaseOrigin() || '(via Vite proxy)');
+  if (!useLocalBackend()) {
+    console.warn(
+      '[DropBridge] Not using local backend. For localhost dev, use npm run dev with frontend/.env.development'
+    );
+  }
 }

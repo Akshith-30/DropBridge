@@ -9,6 +9,8 @@ backend/uploads/
 .env.local
 .env.*.local
 !frontend/.env.production
+!frontend/.env.development
+backend/application-local.yml
 
 # IDE / OS
 .idea/

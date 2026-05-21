@@ -40,6 +40,9 @@ public class TransferSession {
     @Column(name = "sender_user_id")
     private UUID senderUserId;
 
+    @Column(name = "receiver_user_id")
+    private UUID receiverUserId;
+
     @Column(name = "sender_device_id", length = 36)
     private String senderDeviceId;
 

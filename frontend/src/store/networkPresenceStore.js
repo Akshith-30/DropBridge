@@ -1,33 +1,47 @@
 import { create } from 'zustand';
-import { listKnownContacts } from '../utils/knownContacts';
-import { isDeviceOnline } from '../services/api';
+import { getAccessToken } from './authStore';
+import useContactsStore from './contactsStore';
 import {
   connectPresence,
+  disconnectPresence,
   getOnlinePeers,
   isPresenceConnected,
   isPeerOnline,
   onOnlinePeersChange,
+  refreshPresenceSync,
 } from '../webrtc/presenceClient';
 
 function normalizeId(id) {
   return id?.toLowerCase?.() ?? '';
 }
 
-function computeFromPeers(peers) {
+/** Per-device online + count of contacts with at least one device online. */
+function computeFromContacts(contacts, peers) {
   const onlineIds = new Set();
   for (const id of peers.keys()) {
     onlineIds.add(normalizeId(id));
   }
-  const contacts = listKnownContacts();
   const onlineMap = {};
+  let onlineCount = 0;
   for (const c of contacts) {
-    onlineMap[c.deviceId] = onlineIds.has(normalizeId(c.deviceId));
+    let anyOnline = false;
+    for (const d of c.devices || []) {
+      const on = onlineIds.has(normalizeId(d.deviceId));
+      onlineMap[d.deviceId] = on;
+      if (on) anyOnline = true;
+    }
+    if (!anyOnline && c.online === true) {
+      anyOnline = true;
+    }
+    if (anyOnline) {
+      onlineCount += 1;
+    }
   }
-  const onlineCount = Object.values(onlineMap).filter(Boolean).length;
   return { onlineMap, onlineCount };
 }
 
 let unsubPresence = null;
+let unsubContacts = null;
 let apiRefreshGen = 0;
 
 const useNetworkPresenceStore = create((set, get) => ({
@@ -36,48 +50,84 @@ const useNetworkPresenceStore = create((set, get) => ({
   initialized: false,
 
   init() {
-    if (get().initialized) return;
+    if (!getAccessToken()) {
+      get().teardown();
+      return;
+    }
+    if (get().initialized) {
+      if (!isPresenceConnected()) {
+        connectPresence();
+      }
+      return;
+    }
     set({ initialized: true });
 
     connectPresence();
     unsubPresence = onOnlinePeersChange((peers) => {
-      set(computeFromPeers(peers));
+      const contacts = useContactsStore.getState().contacts;
+      set(computeFromContacts(contacts, peers));
     });
+
+    unsubContacts = useContactsStore.subscribe((state, prev) => {
+      if (state.loaded && state.contacts !== prev.contacts) {
+        set(computeFromContacts(state.contacts, getOnlinePeers()));
+      }
+    });
+
     get().refreshOnlineStatus();
   },
 
-  async refreshOnlineStatus() {
+  teardown() {
+    if (unsubContacts) {
+      unsubContacts();
+      unsubContacts = null;
+    }
+    if (unsubPresence) {
+      unsubPresence();
+      unsubPresence = null;
+    }
+    set({ initialized: false, onlineMap: {}, onlineCount: 0 });
+  },
+
+  async refreshOnlineStatus({ forceContacts = false } = {}) {
+    if (!getAccessToken()) {
+      set({ onlineMap: {}, onlineCount: 0 });
+      return;
+    }
+
+    const contactState = useContactsStore.getState();
+    let contacts = contactState.contacts;
+    const needFetch =
+      forceContacts || !contactState.loaded || (contacts.length === 0 && !contactState.loading);
+
+    if (needFetch) {
+      contacts = await contactState.loadContacts({ force: forceContacts });
+    }
+
     if (isPresenceConnected()) {
       apiRefreshGen++;
-      set(computeFromPeers(getOnlinePeers()));
+      set(computeFromContacts(contacts, getOnlinePeers()));
       return;
     }
 
     const gen = ++apiRefreshGen;
-    const contacts = listKnownContacts();
-    if (contacts.length === 0) {
-      if (gen === apiRefreshGen) {
-        set({ onlineMap: {}, onlineCount: 0 });
-      }
-      return;
-    }
-
-    const entries = await Promise.all(
-      contacts.map(async (c) => {
-        try {
-          const res = await isDeviceOnline(c.deviceId);
-          return [c.deviceId, res.data === true];
-        } catch {
-          return [c.deviceId, false];
+    const onlineMap = {};
+    let onlineCount = 0;
+    for (const c of contacts) {
+      let anyOnline = c.online === true;
+      for (const d of c.devices || []) {
+        if (d.online) {
+          onlineMap[d.deviceId] = true;
+          anyOnline = true;
+        } else {
+          onlineMap[d.deviceId] = false;
         }
-      })
-    );
-
-    if (gen !== apiRefreshGen) return;
-
-    const onlineMap = Object.fromEntries(entries);
-    const onlineCount = Object.values(onlineMap).filter(Boolean).length;
-    set({ onlineMap, onlineCount });
+      }
+      if (anyOnline) onlineCount += 1;
+    }
+    if (gen === apiRefreshGen) {
+      set({ onlineMap, onlineCount });
+    }
   },
 
   isContactOnline(deviceId) {
@@ -86,6 +136,24 @@ const useNetworkPresenceStore = create((set, get) => ({
     }
     return get().onlineMap[deviceId] === true;
   },
+
+  async resyncPresence() {
+    if (!getAccessToken()) return;
+    if (!isPresenceConnected()) {
+      refreshPresenceSync();
+    }
+    await get().refreshOnlineStatus({ forceContacts: true });
+  },
 }));
+
+export function onAuthChangeForNetwork() {
+  if (getAccessToken()) {
+    useNetworkPresenceStore.getState().init();
+  } else {
+    disconnectPresence();
+    useContactsStore.getState().reset();
+    useNetworkPresenceStore.getState().teardown();
+  }
+}
 
 export default useNetworkPresenceStore;

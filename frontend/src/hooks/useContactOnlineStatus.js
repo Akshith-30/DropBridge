@@ -1,31 +1,40 @@
 import { useEffect } from 'react';
 import { isPresenceConnected } from '../webrtc/presenceClient';
+import useAuthStore from '../store/authStore';
 import useNetworkPresenceStore from '../store/networkPresenceStore';
 
 /** Shared online status for network badge + panel (single store, no duplicate state). */
 export function useContactOnlineStatus() {
+  const userId = useAuthStore((s) => s.user?.id);
   const onlineMap = useNetworkPresenceStore((s) => s.onlineMap);
   const onlineCount = useNetworkPresenceStore((s) => s.onlineCount);
-  const init = useNetworkPresenceStore((s) => s.init);
-  const refreshOnlineStatus = useNetworkPresenceStore((s) => s.refreshOnlineStatus);
+  const resyncPresence = useNetworkPresenceStore((s) => s.resyncPresence);
   const isContactOnline = useNetworkPresenceStore((s) => s.isContactOnline);
 
   useEffect(() => {
-    init();
+    if (userId) {
+      useNetworkPresenceStore.getState().init();
+    } else {
+      useNetworkPresenceStore.getState().teardown();
+    }
 
     const fallbackInterval = setInterval(() => {
-      if (!isPresenceConnected()) {
-        refreshOnlineStatus();
+      if (userId && !isPresenceConnected()) {
+        useNetworkPresenceStore.getState().refreshOnlineStatus();
       }
-    }, 30000);
+    }, 60_000);
 
     return () => clearInterval(fallbackInterval);
-  }, [init, refreshOnlineStatus]);
+  }, [userId]);
+
+  const refreshFromApi = () =>
+    useNetworkPresenceStore.getState().refreshOnlineStatus({ forceContacts: true });
 
   return {
     onlineMap,
     onlineCount,
     isContactOnline,
-    refreshFromApi: refreshOnlineStatus,
+    refreshFromApi,
+    resyncPresence,
   };
 }

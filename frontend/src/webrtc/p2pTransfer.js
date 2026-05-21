@@ -4,11 +4,20 @@ import { getDeviceId, getDisplayName } from '../utils/deviceIdentity';
 
 /**
  * How long (ms) to wait for a P2P data channel to open before giving up.
- * If the timeout fires the promise rejects with err.isP2pTimeout === true
- * so the caller can automatically switch to the cloud-fallback path.
  * Override via VITE_P2P_TIMEOUT_MS env var if needed.
  */
 const P2P_TIMEOUT_MS = Number(import.meta.env.VITE_P2P_TIMEOUT_MS) || 20_000;
+
+function notifyPeerError(signaling, message) {
+  try {
+    signaling?.send({
+      type: SIGNALING_MESSAGE_TYPES.ERROR,
+      message: message || 'Transfer failed',
+    });
+  } catch {
+    // best-effort — peer may already be disconnected
+  }
+}
 
 function isType(msg, expected) {
   return normalizeSignalingType(msg?.type) === expected;
@@ -84,7 +93,9 @@ export function runSenderTransfer({ sessionId, file, files, onProgress, onStatus
   return new Promise((resolve, reject) => {
     const fail = (err) => {
       if (transferDone) return;
+      notifyPeerError(signaling, err?.message);
       cleanupMedia();
+      signaling?.close();
       reject(err);
     };
 
@@ -95,10 +106,9 @@ export function runSenderTransfer({ sessionId, file, files, onProgress, onStatus
       p2pTimeoutHandle = setTimeout(() => {
         if (transferDone) return;
         const err = new Error(
-          `P2P connection timed out after ${P2P_TIMEOUT_MS / 1000}s — switching to cloud fallback`
+          `Direct connection timed out after ${P2P_TIMEOUT_MS / 1000}s. Ask the receiver to keep their page open and try again.`
         );
-        err.isP2pTimeout = true;
-        onStatus?.('p2p_timeout');
+        onStatus?.('failed');
         fail(err);
       }, P2P_TIMEOUT_MS);
     };
@@ -195,13 +205,13 @@ export function runSenderTransfer({ sessionId, file, files, onProgress, onStatus
         };
 
         pc.onconnectionstatechange = () => {
-          if (pc?.connectionState === 'failed') {
+          if (!transferDone && pc?.connectionState === 'failed') {
             fail(new Error('P2P connection failed'));
           }
         };
 
         pc.oniceconnectionstatechange = () => {
-          if (pc?.iceConnectionState === 'failed') {
+          if (!transferDone && pc?.iceConnectionState === 'failed') {
             fail(new Error('ICE connection failed'));
           }
         };
@@ -277,7 +287,9 @@ export function runReceiverTransfer({
 
   return new Promise((resolve, reject) => {
     const fail = (err) => {
+      notifyPeerError(signaling, err?.message);
       cleanupMedia();
+      signaling?.close();
       reject(err);
     };
 
@@ -359,7 +371,7 @@ export function runReceiverTransfer({
       };
 
       pc.onconnectionstatechange = () => {
-        if (pc?.connectionState === 'failed') {
+        if (!batchComplete && pc?.connectionState === 'failed') {
           fail(new Error('P2P connection failed'));
         }
       };

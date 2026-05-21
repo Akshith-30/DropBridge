@@ -17,12 +17,13 @@ export function shouldPollSenderSession({ session, isCloudMode, p2pStatus }) {
   return !isTerminalSessionStatus(session.status);
 }
 
-/** Receiver page — P2P uses WebSocket; only poll REST for cloud fallback */
-export function shouldPollReceiverSession({ session, isCloudMode, p2pActive, p2pStatus, hasFiles }) {
+/** Receiver page — poll cloud uploads; during P2P also poll so FAILED status reaches the receiver */
+export function shouldPollReceiverSession({ session, isCloudMode, p2pStatus, hasFiles }) {
   if (!session) return true;
   if (isTerminalSessionStatus(session.status)) return false;
-  if (!isCloudMode && p2pActive) return false;
-  if (!isCloudMode && (p2pStatus === 'completed' || hasFiles)) return false;
+  if (!isCloudMode && (p2pStatus === 'completed' || p2pStatus === 'failed' || hasFiles)) {
+    return false;
+  }
   if (isCloudMode && hasFiles && session.status === 'READY') return false;
-  return isCloudMode;
+  return true;
 }

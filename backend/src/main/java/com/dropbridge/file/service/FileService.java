@@ -2,7 +2,9 @@ package com.dropbridge.file.service;
 
 import com.dropbridge.common.exception.BadRequestException;
 import com.dropbridge.common.exception.ResourceNotFoundException;
+import com.dropbridge.common.exception.UnauthorizedException;
 import com.dropbridge.file.dto.FileResponse;
+import com.dropbridge.file.dto.SessionFileAccessResponse;
 import com.dropbridge.file.model.TransferFile;
 import com.dropbridge.file.repository.FileRepository;
 import com.dropbridge.storage.service.StorageService;
@@ -19,6 +21,7 @@ import org.springframework.util.unit.DataSize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -59,6 +62,9 @@ public class FileService {
 
     @Value("${dropbridge.upload.max-session-size:1GB}")
     private DataSize maxSessionSize;
+
+    @Value("${dropbridge.storage.presigned-url-minutes:15}")
+    private int presignedUrlMinutes;
 
     /**
      * Uploads a file to a specific transfer session.
@@ -120,6 +126,38 @@ public class FileService {
     /**
      * Get all files for a session.
      */
+    /**
+     * Cloud files for a session with presigned preview/download URLs (history detail panel).
+     */
+    @Transactional(readOnly = true)
+    public List<SessionFileAccessResponse> listSessionFilesForUser(UUID sessionId, UUID userId) {
+        TransferSession session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found: " + sessionId));
+
+        assertUserCanAccessSession(session, userId);
+
+        if (session.getMode() == TransferMode.P2P) {
+            return List.of();
+        }
+
+        Duration ttl = Duration.ofMinutes(Math.max(1, presignedUrlMinutes));
+        return fileRepository.findBySessionId(sessionId).stream()
+                .map(file -> {
+                    String url = storageService
+                            .createPresignedDownloadUrl(file.getStorageKey(), file.getFilename(), ttl)
+                            .orElse(null);
+                    return SessionFileAccessResponse.builder()
+                            .id(file.getId())
+                            .filename(file.getFilename())
+                            .size(file.getSize())
+                            .mimeType(file.getMimeType())
+                            .previewUrl(url)
+                            .downloadUrl(url)
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
     public List<FileResponse> getFilesBySession(UUID sessionId) {
         sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Session not found: " + sessionId));
@@ -182,6 +220,17 @@ public class FileService {
             throw new BadRequestException(
                     "Total transfer size cannot exceed " + maxSessionSize
                             + " for this session. Remove files or upload a smaller batch.");
+        }
+    }
+
+    private void assertUserCanAccessSession(TransferSession session, UUID userId) {
+        if (userId == null) {
+            throw new UnauthorizedException("Sign in to access transfer files.");
+        }
+        boolean sender = userId.equals(session.getSenderUserId());
+        boolean receiver = userId.equals(session.getReceiverUserId());
+        if (!sender && !receiver) {
+            throw new UnauthorizedException("You do not have access to this transfer.");
         }
     }
 

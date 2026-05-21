@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { FileDown } from 'lucide-react';
 import Button from './ui/Button';
 import {
-  connectPresence,
   onIncomingTransfer,
   normalizePresenceType,
   PRESENCE_TYPES,
@@ -18,8 +17,6 @@ export default function IncomingTransferPrompt() {
   pathnameRef.current = location.pathname;
 
   useEffect(() => {
-    connectPresence();
-
     return onIncomingTransfer((message) => {
       if (normalizePresenceType(message.type) !== PRESENCE_TYPES.INCOMING_TRANSFER) {
         return;

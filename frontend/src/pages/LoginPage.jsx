@@ -1,14 +1,18 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import Button from '../components/ui/Button';
+import PageBackButton from '../components/PageBackButton';
+import { PAGE_CONTAINER_NARROW, PAGE_MAIN } from '../lib/pageLayout';
 import { login } from '../services/authApi';
 import useAuthStore from '../store/authStore';
 import { formField, formInput, formLabel } from '../lib/formStyles';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const fromNetwork = location.state?.from === 'network';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -24,7 +28,7 @@ export default function LoginPage() {
         accessToken: res.data.accessToken,
         user: res.data.user,
       });
-      navigate('/');
+      navigate(fromNetwork ? '/' : '/');
     } catch (err) {
       setError(err.response?.data?.message || 'Could not sign in. Check your credentials.');
     } finally {
@@ -33,11 +37,15 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-[calc(100vh-4.5rem)] flex-1 flex-col items-center justify-center px-4 pb-10 pt-[5.5rem]">
-      <div className="w-full max-w-md animate-fade-in-up rounded-[1.25rem] border border-white/12 bg-[rgba(14,14,20,0.92)] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8">
+    <main className={PAGE_MAIN}>
+      <div className={PAGE_CONTAINER_NARROW}>
+        <PageBackButton fallback="/" />
+        <div className="w-full animate-fade-in-up rounded-[1.25rem] border border-white/12 bg-[rgba(14,14,20,0.92)] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:p-8">
         <h1 className="mb-2 text-2xl font-bold text-white">Sign in</h1>
         <p className="mb-6 text-sm text-white/55">
-          Optional — you can still send files without an account. Sign in to link transfers to your profile.
+          {fromNetwork
+            ? 'Sign in to use My Network — your contacts are private to your account.'
+            : 'Optional — you can still send files without an account. Sign in for My Network and transfer history.'}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-1">
@@ -95,6 +103,7 @@ export default function LoginPage() {
             Create one
           </Link>
         </p>
+        </div>
       </div>
     </main>
   );

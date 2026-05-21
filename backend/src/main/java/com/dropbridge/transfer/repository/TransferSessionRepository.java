@@ -21,4 +21,6 @@ public interface TransferSessionRepository extends JpaRepository<TransferSession
     List<TransferSession> findByStatus(TransferStatus status);
 
     List<TransferSession> findBySenderUserIdOrderByCreatedAtDesc(UUID senderUserId, Pageable pageable);
+
+    List<TransferSession> findByReceiverUserIdOrderByCreatedAtDesc(UUID receiverUserId, Pageable pageable);
 }
